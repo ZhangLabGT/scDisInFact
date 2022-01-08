@@ -106,8 +106,8 @@ class NB():
         scale_factor = self.scale_factor
         eps = self.eps
 
-        y_true = torch.float(y_true)
-        y_pred = torch.float(y_pred) * scale_factor
+        y_true = torch.float(y_true, torch.float32)
+        y_pred = torch.float(y_pred, torch.float32) * scale_factor
 
         if self.masking:
             nelem = _nelem(y_true)
@@ -129,6 +129,7 @@ class NB():
             else:
                 final = torch.reduce_mean(final)
 
+
         return final  
 
 class ZINB(NB):
@@ -146,8 +147,8 @@ class ZINB(NB):
         # element-wise. we take the mean only in the end
         nb_case = super().loss(y_true, y_pred, mean=False) - torch.log(1.0-self.pi+eps)
 
-        y_true = torch.float(y_true)
-        y_pred = torch.float(y_pred) * scale_factor
+        y_true = torch.float(y_true, torch.float32)
+        y_pred = torch.float(y_pred, torch.float32) * scale_factor
         theta = torch.minimum(self.theta, 1e6)
 
         zero_nb = torch.pow(theta/(theta+y_pred+eps), theta)

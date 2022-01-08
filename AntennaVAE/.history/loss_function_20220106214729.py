@@ -82,8 +82,8 @@ def _nan2zero(x):
     return torch.where(torch.is_nan(x), torch.zeros_like(x), x)
 
 def _nelem(x):
-    nelem = torch.reduce_sum(torch.float(~torch.is_nan(x), torch.float32))
-    return torch.float(torch.where(torch.equal(nelem, 0.), 1., nelem), x.dtype)
+    nelem = torch.reduce_sum(torch.cast(~torch.is_nan(x), torch.float32))
+    return torch.cast(torch.where(torch.equal(nelem, 0.), 1., nelem), x.dtype)
 
 def _reduce_mean(x):
     nelem = _nelem(x)
@@ -106,8 +106,8 @@ class NB():
         scale_factor = self.scale_factor
         eps = self.eps
 
-        y_true = torch.float(y_true)
-        y_pred = torch.float(y_pred) * scale_factor
+        y_true = torch.cast(y_true, torch.float32)
+        y_pred = torch.cast(y_pred, torch.float32) * scale_factor
 
         if self.masking:
             nelem = _nelem(y_true)
@@ -129,6 +129,7 @@ class NB():
             else:
                 final = torch.reduce_mean(final)
 
+
         return final  
 
 class ZINB(NB):
@@ -146,8 +147,8 @@ class ZINB(NB):
         # element-wise. we take the mean only in the end
         nb_case = super().loss(y_true, y_pred, mean=False) - torch.log(1.0-self.pi+eps)
 
-        y_true = torch.float(y_true)
-        y_pred = torch.float(y_pred) * scale_factor
+        y_true = torch.cast(y_true, torch.float32)
+        y_pred = torch.cast(y_pred, torch.float32) * scale_factor
         theta = torch.minimum(self.theta, 1e6)
 
         zero_nb = torch.pow(theta/(theta+y_pred+eps), theta)

@@ -129,6 +129,7 @@ class NB():
             else:
                 final = torch.reduce_mean(final)
 
+
         return final  
 
 class ZINB(NB):
