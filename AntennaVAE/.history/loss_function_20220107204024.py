@@ -152,9 +152,12 @@ class ZINB(NB):
         zero_case = -torch.log(self.pi + ((1.0-self.pi)*zero_nb)+eps)
         result = torch.where(torch.less(y_true, 1e-8), zero_case, nb_case)
         ridge = self.ridge_lambda*torch.square(self.pi)
+        # print('zero_case', zero_case)
+        # print('zero_nb', zero_nb)
+        print('result', result)
+        
         result += ridge
 
-        # result = torch.where(torch.isnan(result), torch.full_like(result, 0), result)
         if mean:
             if self.masking:
                 result = _reduce_mean(result) 

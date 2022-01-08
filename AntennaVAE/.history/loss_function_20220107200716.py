@@ -154,7 +154,6 @@ class ZINB(NB):
         ridge = self.ridge_lambda*torch.square(self.pi)
         result += ridge
 
-        # result = torch.where(torch.isnan(result), torch.full_like(result, 0), result)
         if mean:
             if self.masking:
                 result = _reduce_mean(result) 

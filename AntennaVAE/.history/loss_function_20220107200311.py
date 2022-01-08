@@ -73,6 +73,8 @@ def dist_loss(z, diff_sim, mask = None, mode = "mse"):
         loss_dist = torch.sum(Q_dist * torch.log(Q_dist / P_dist))
     return loss_dist
 
+
+
 def _nan2inf(x):
     return torch.where(torch.isnan(x), torch.zeros_like(x)+np.inf, x)
 
@@ -103,7 +105,7 @@ class NB():
     def loss(self, y_true, y_pred, mean=True):
         scale_factor = self.scale_factor
         eps = self.eps
-        
+
         y_true = y_true.type(torch.float32)
         y_pred = y_pred.type(torch.float32) * scale_factor
 
@@ -154,7 +156,6 @@ class ZINB(NB):
         ridge = self.ridge_lambda*torch.square(self.pi)
         result += ridge
 
-        # result = torch.where(torch.isnan(result), torch.full_like(result, 0), result)
         if mean:
             if self.masking:
                 result = _reduce_mean(result) 

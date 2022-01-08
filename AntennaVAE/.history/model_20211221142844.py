@@ -124,18 +124,3 @@ class gene_act(nn.Module):
                     x = layer(x)
         
         return x
-
-class OutputLayer(nn.Module):
-    def __init__(self, outputSize, lastHidden) -> None:
-        super().__init__()
-        self.output_size = outputSize
-        self.last_hidden = lastHidden
-        self.mean_layer = FC(features=[self.last_hidden, self.output_size])
-        self.pi_layer = FC(features=[self.last_hidden, self.output_size])
-        self.theta_layer = FC(features=[self.last_hidden, self.output_size])
-
-    def forward(self, decodedData):
-        Miu = self.mean_layer(decodedData)
-        Pi = self.pi_layer(decodedData)
-        Theta = self.theta_layer(decodedData)
-        return Miu, Pi, Theta
