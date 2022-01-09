@@ -116,7 +116,6 @@ class NB():
 
         t1 = torch.lgamma(theta+eps) + torch.lgamma(y_true+1.0) - torch.lgamma(y_true+theta+eps)
         t2 = (theta+y_true) * torch.log(1.0 + (y_pred/(theta+eps))) + (y_true * (torch.log(theta+eps) - torch.log(y_pred+eps)))
-
         final = t1 + t2
 
         final = _nan2inf(final)
@@ -142,19 +141,20 @@ class ZINB(NB):
         # reuse existing NB neg.log.lik.
         # mean is always False here, because everything is calculated
         # element-wise. we take the mean only in the end
-        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log(torch.tensor(1.0-self.pi+eps))
-
+        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps)-self.pi))
         y_true = y_true.type(torch.float32)
+        
         y_pred = y_pred.type(torch.float32) * scale_factor
         theta = torch.minimum(self.theta, torch.tensor(1e6))
 
         zero_nb = torch.pow(theta/(theta+y_pred+eps), theta)
         zero_case = -torch.log(self.pi + ((1.0-self.pi)*zero_nb)+eps)
         result = torch.where(torch.less(y_true, 1e-8), zero_case, nb_case)
+
+
         ridge = self.ridge_lambda*torch.square(self.pi)
         result += ridge
 
-        # result = torch.where(torch.isnan(result), torch.full_like(result, 0), result)
         if mean:
             if self.masking:
                 result = _reduce_mean(result) 
@@ -162,7 +162,7 @@ class ZINB(NB):
                 result = torch.mean(result)
 
         result = _nan2inf(result)
-
+        
         return result
 class MMD_LOSS(nn.Module):
     def __init__(self):

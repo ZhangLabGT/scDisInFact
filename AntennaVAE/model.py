@@ -8,8 +8,8 @@ from typing import Iterable, List
 from torch.nn.parameter import Parameter
 
 class FC(nn.Module):
-    def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True):
-        super(FC, self).__init__()
+    def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True, act_func='relu'):
+        super().__init__()
 
         self.features = features
         self.fc_layers = []
@@ -44,6 +44,33 @@ class FC(nn.Module):
                 if layer is not None:
                     x = layer(x)
         return x
+
+class FC_PI(FC):
+    def __init__(self, features=[1000, 500, 500], use_batch_norm=True, dropout_rate=0, negative_slope=0, use_bias=True, act_func='relu'):
+        super().__init__(features=features, use_batch_norm=use_batch_norm, dropout_rate=dropout_rate, negative_slope=negative_slope, use_bias=use_bias, act_func=act_func)
+
+        # create fc layers according to the layers_dim
+        self.fc_layers = nn.Sequential(
+            collections.OrderedDict(
+                [
+                    (
+                        "Layer {}".format(i),
+                        nn.Sequential(
+                            collections.OrderedDict(
+                                [
+                                    ("linear", nn.Linear(n_in, n_out) if use_bias else nn.Linear(n_in, n_out, bias = False),),
+                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001) if use_batch_norm else None,),
+                                    ("sigmoid", nn.Sigmoid(),),
+                                    ("dropout", nn.Dropout(p=dropout_rate) if dropout_rate > 0 else None,),
+                                ]
+                            )
+                        ),
+                    )
+                    for i, (n_in, n_out) in enumerate(zip(self.features[:-1], self.features[1:]))
+                ]
+            )
+        )
+    
 
 # Encoder
 class Encoder(nn.Module):
@@ -131,7 +158,7 @@ class OutputLayer(nn.Module):
         self.output_size = outputSize
         self.last_hidden = lastHidden
         self.mean_layer = FC(features=[self.last_hidden, self.output_size])
-        self.pi_layer = FC(features=[self.last_hidden, self.output_size])
+        self.pi_layer = FC_PI(features=[self.last_hidden, self.output_size])
         self.theta_layer = FC(features=[self.last_hidden, self.output_size])
 
     def forward(self, decodedData):
