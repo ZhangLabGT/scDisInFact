@@ -26,4 +26,8 @@ def plot_train(all_loss, seperate=False):
         test_loss_fig.title.set_text('Test_Loss Fig')
     plt.tight_layout()
     plt.show()
-    
+
+    # Calculate Weight for loss
+    def weight_calculator(loss1, loss2):
+        factor = float.as_integer_ratio((loss1 / loss2))
+        return factor[0], factor[1]

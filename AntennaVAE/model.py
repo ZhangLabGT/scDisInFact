@@ -8,11 +8,17 @@ from typing import Iterable, List
 from torch.nn.parameter import Parameter
 
 class FC(nn.Module):
-    def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True, act_func='relu'):
+    def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True, act_func_type='relu'):
         super().__init__()
+        self.fc_layers = []
 
         self.features = features
-        self.fc_layers = []
+        self.use_batch_norm = use_batch_norm
+        self.dropout_rate = dropout_rate
+        self.negative_slope = negative_slope
+        self.use_bias = use_bias
+        self.act_func_type = act_func_type
+        self.act_func = self.__act_func_selector__()
 
         # create fc layers according to the layers_dim
         self.fc_layers = nn.Sequential(
@@ -23,10 +29,10 @@ class FC(nn.Module):
                         nn.Sequential(
                             collections.OrderedDict(
                                 [
-                                    ("linear", nn.Linear(n_in, n_out) if use_bias else nn.Linear(n_in, n_out, bias = False),),
-                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001) if use_batch_norm else None,),
-                                    ("relu", nn.ReLU() if negative_slope <= 0 else nn.LeakyReLU(negative_slope = negative_slope),),
-                                    ("dropout", nn.Dropout(p=dropout_rate) if dropout_rate > 0 else None,),
+                                    ("linear", nn.Linear(n_in, n_out) if self.use_bias else nn.Linear(n_in, n_out, bias = False),),
+                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001) if self.use_batch_norm else None,),
+                                    ("act", self.act_func),
+                                    ("dropout", nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0 else None,),
                                 ]
                             )
                         ),
@@ -35,6 +41,13 @@ class FC(nn.Module):
                 ]
             )
         )
+    # Selecting activation function
+    def __act_func_selector__(self):
+        # TODO: find a more elegant way
+        if self.act_func_type == 'relu':
+            return nn.ReLU() if self.negative_slope <= 0 else nn.LeakyReLU(negative_slope = self.negative_slope)
+        elif self.act_func_type == 'sigmoid':
+            return nn.Sigmoid()
 
     def forward(self, x):
         # loop through all layers
@@ -43,34 +56,7 @@ class FC(nn.Module):
             for layer in layers:
                 if layer is not None:
                     x = layer(x)
-        return x
-
-class FC_PI(FC):
-    def __init__(self, features=[1000, 500, 500], use_batch_norm=True, dropout_rate=0, negative_slope=0, use_bias=True, act_func='relu'):
-        super().__init__(features=features, use_batch_norm=use_batch_norm, dropout_rate=dropout_rate, negative_slope=negative_slope, use_bias=use_bias, act_func=act_func)
-
-        # create fc layers according to the layers_dim
-        self.fc_layers = nn.Sequential(
-            collections.OrderedDict(
-                [
-                    (
-                        "Layer {}".format(i),
-                        nn.Sequential(
-                            collections.OrderedDict(
-                                [
-                                    ("linear", nn.Linear(n_in, n_out) if use_bias else nn.Linear(n_in, n_out, bias = False),),
-                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001) if use_batch_norm else None,),
-                                    ("sigmoid", nn.Sigmoid(),),
-                                    ("dropout", nn.Dropout(p=dropout_rate) if dropout_rate > 0 else None,),
-                                ]
-                            )
-                        ),
-                    )
-                    for i, (n_in, n_out) in enumerate(zip(self.features[:-1], self.features[1:]))
-                ]
-            )
-        )
-    
+        return x    
 
 # Encoder
 class Encoder(nn.Module):
@@ -152,14 +138,16 @@ class gene_act(nn.Module):
         
         return x
 
+# The three output layers of DCA method
 class OutputLayer(nn.Module):
-    def __init__(self, outputSize, lastHidden) -> None:
+    def __init__(self, features=[256, 1024], dropoutRates={'mean': 0, 'pi': 0, 'theta': 0}) -> None:
         super().__init__()
-        self.output_size = outputSize
-        self.last_hidden = lastHidden
-        self.mean_layer = FC(features=[self.last_hidden, self.output_size])
-        self.pi_layer = FC_PI(features=[self.last_hidden, self.output_size])
-        self.theta_layer = FC(features=[self.last_hidden, self.output_size])
+        self.output_size = features[1]
+        self.last_hidden = features[0]
+        self.mean_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['mean'])
+        # ! Parameter Pi needs Sigmoid as activation func 
+        self.pi_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['pi'], act_func_type='sigmoid')
+        self.theta_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['theta'])
 
     def forward(self, decodedData):
         Miu = self.mean_layer(decodedData)
