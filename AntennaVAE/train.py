@@ -1,6 +1,7 @@
 import torch
 
 from loss_function import ZINB, maximum_mean_discrepancy
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Training
 def train_epoch(encoder, decoder, output_layer, dataloader, optimizer, factor_zinb, factor_mmd):
     encoder.train()
@@ -8,6 +9,7 @@ def train_epoch(encoder, decoder, output_layer, dataloader, optimizer, factor_zi
     output_layer.train()
     train_loss = 0.0
     for sc_data_batch in dataloader:
+        sc_data_batch = sc_data_batch["count"].to(device)
         # Encode
         encoded_data = encoder(sc_data_batch)
         # Decode
@@ -19,6 +21,8 @@ def train_epoch(encoder, decoder, output_layer, dataloader, optimizer, factor_zi
         # Evaluate loss
         zinb = ZINB(pi_param, theta=theta_param, ridge_lambda=1e-5)
         zinb_loss = (zinb.loss(mean_param, sc_data_batch))
+
+        # should be calculated between the latent space of two batches, not input and output
         mmd_loss = maximum_mean_discrepancy(mean_param, sc_data_batch)
 
         loss = zinb_loss * factor_zinb + mmd_loss * factor_mmd
@@ -39,6 +43,7 @@ def test_epoch(encoder, decoder, output_layer, dataloader, factor_zinb, factor_m
     test_loss = 0.0
     with torch.no_grad(): # Don't track gradients
         for sc_data_batch in dataloader:
+            sc_data_batch = sc_data_batch["count"].to(device)
             # Encode
             encoded_data = encoder(sc_data_batch)
             # Decode

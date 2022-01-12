@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def compute_pairwise_distances(x, y):
     x_norm = (x**2).sum(1).view(-1, 1)
@@ -91,7 +91,6 @@ def _reduce_mean(x):
 class NB():
     def __init__(self, theta=None, masking=False, scope='nbinom_loss/',
                  scale_factor=1.0, debug=False):
-
         # for numerical stability
         self.eps = 1e-10
         self.scale_factor = scale_factor
@@ -112,7 +111,7 @@ class NB():
             y_true = _nan2zero(y_true)
 
         # Clip theta
-        theta = torch.minimum(self.theta, torch.tensor(1e6))
+        theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
 
         t1 = torch.lgamma(theta+eps) + torch.lgamma(y_true+1.0) - torch.lgamma(y_true+theta+eps)
         t2 = (theta+y_true) * torch.log(1.0 + (y_pred/(theta+eps))) + (y_true * (torch.log(theta+eps) - torch.log(y_pred+eps)))
@@ -131,7 +130,10 @@ class NB():
 class ZINB(NB):
     def __init__(self, pi, ridge_lambda=0.0, scope='zinb_loss/', **kwargs):
         super().__init__(scope=scope, **kwargs)
-        self.pi = torch.tensor(pi)
+        if not torch.is_tensor(pi):
+            self.pi = torch.tensor(pi).to(device)
+        else:
+            self.pi = pi
         self.ridge_lambda = ridge_lambda
 
     def loss(self, y_true, y_pred, mean=True):
@@ -141,11 +143,11 @@ class ZINB(NB):
         # reuse existing NB neg.log.lik.
         # mean is always False here, because everything is calculated
         # element-wise. we take the mean only in the end
-        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps)-self.pi))
+        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps).to(device)-self.pi))
         y_true = y_true.type(torch.float32)
         
         y_pred = y_pred.type(torch.float32) * scale_factor
-        theta = torch.minimum(self.theta, torch.tensor(1e6))
+        theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
 
         zero_nb = torch.pow(theta/(theta+y_pred+eps), theta)
         zero_case = -torch.log(self.pi + ((1.0-self.pi)*zero_nb)+eps)
