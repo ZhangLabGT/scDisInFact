@@ -139,15 +139,22 @@ class gene_act(nn.Module):
         return x
 
 # The three output layers of DCA method
+class ACT_EXP(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x):
+        return torch.exp(x)
+
 class OutputLayer(nn.Module):
-    def __init__(self, features=[256, 1024], dropoutRates={'mean': 0, 'pi': 0, 'theta': 0}) -> None:
+    def __init__(self, features=[256, 1024]) -> None:
         super().__init__()
         self.output_size = features[1]
         self.last_hidden = features[0]
-        self.mean_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['mean'])
+        self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), ACT_EXP())
         # ! Parameter Pi needs Sigmoid as activation func 
-        self.pi_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['pi'], act_func_type='sigmoid')
-        self.theta_layer = FC(features=[self.last_hidden, self.output_size], dropout_rate=dropoutRates['theta'])
+        self.pi_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), nn.Sigmoid())
+        self.theta_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), ACT_EXP())
 
     def forward(self, decodedData):
         Miu = self.mean_layer(decodedData)
