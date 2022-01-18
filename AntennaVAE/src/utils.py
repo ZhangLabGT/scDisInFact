@@ -18,14 +18,16 @@ def preproc_filter(data1, data2, min_cells):
 
     filtered_data1 = cmb_data[:cell_num1, :]
     filtered_data2 = cmb_data[cell_num1:, :]
-    print('FIltered shape of Data1:{}, \t Data2: {}'.format(filtered_data1.shape, filtered_data2.shape))
+    print('FIltered shape of Data1:{}, \t Data2: {}'.format(
+        filtered_data1.shape, filtered_data2.shape))
 
     return filtered_data1, filtered_data2
 
-def vis_latent_emb(data_Loader_1, data_loader_2, encoder, device):
+
+def vis_latent_emb(data_Loader_1, data_loader_2, encoder, device, labels, title):
     rcParams["font.size"] = 20
 
-    umap_op = UMAP(n_components = 2, min_dist = 0.4, random_state = 0)
+    umap_op = UMAP(n_components=2, min_dist=0.4, random_state=0)
     for data in data_Loader_1:
         z_data_1 = encoder(data["count"].to(device))
 
@@ -40,14 +42,15 @@ def vis_latent_emb(data_Loader_1, data_loader_2, encoder, device):
     clust_color = plt.cm.get_cmap("Paired", n_clust)
     fig = plt.figure(figsize = (10,7))
     ax = fig.add_subplot()
-    ax.scatter(z_umap_1[:,0], z_umap_1[:, 1], color = clust_color(0), label = "Day4")
-    ax.scatter(z_umap_2[:,0], z_umap_2[:, 1], color = clust_color(1), label = "Day2")
+    ax.scatter(z_umap_1[:,0], z_umap_1[:, 1], color = 'r', label = labels[0])
+    ax.scatter(z_umap_2[:,0], z_umap_2[:, 1], color = 'b', label = labels[1])
     ax.legend()
+    ax.title(title)
     ax.set_xlabel("UMAP 1")
     ax.set_ylabel("UMAP 2")
 
 # PLOT
-def plot_train(all_loss, type=None):
+def plot_train(all_loss, type=None, batches=None):
     x_rg = range(len(all_loss['train_loss']))
     fig = plt.figure()
     if type == "sep":
@@ -72,11 +75,15 @@ def plot_train(all_loss, type=None):
         test_loss_fig.plot(x_rg, all_loss['test_loss'])
         test_loss_fig.title.set_text('Test_Loss Fig')
     elif type == None:
-        ax = fig.add_subplot(1,1,1)
+        ax = fig.add_subplot()
         
         ax.plot(x_rg, all_loss['train_loss'])
         ax.legend(['train_loss'])
-        ax.title.set_text('Train Loss Fig')
-    plt.tight_layout()
+        if batches == None:
+            ax.title.set_text('Train Loss Fig')
+        else:
+            ax.title.set_text('Train Loss Fig:{} and {}'.format(batches[0], batches))
+        ax.set_xlabel("epoch")
+        ax.set_ylabel("train loss")
     plt.show()
 
