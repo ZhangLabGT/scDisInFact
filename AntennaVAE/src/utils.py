@@ -46,9 +46,9 @@ def preproc_filter(data1, data2, min_cells):
         filtered_data1.shape, filtered_data2.shape))
 
     return filtered_data1, filtered_data2
-    
+
+
 def vis_latent_emb_simp(data_Loader_1, data_loader_2, encoder, device, labels, title):
-    # TODO: will be discardedthis is only for AE_model.ipynb file, 
     rcParams["font.size"] = 20
 
     umap_op = UMAP(n_components=2, min_dist=0.4, random_state=0)
@@ -74,9 +74,10 @@ def vis_latent_emb_simp(data_Loader_1, data_loader_2, encoder, device, labels, t
     ax.set_ylabel("UMAP 2")
 
 # This is the fuction to visilize the embedding results
-def vis_latent_emb(test_loader_1, test_loader_2, encoder, 
-                    device, title, batches, maps=None):
+def vis_embedding(test_loader_1, test_loader_2, encoder, 
+                    device, title, batches, maps, preview=False):
     umap_op = UMAP(n_components=2, min_dist=0.4, random_state=0)
+
     for data in test_loader_1:
         z_data_1 = encoder(data["count"].to(device))
         cell_types_1 = data['anno']
@@ -87,35 +88,74 @@ def vis_latent_emb(test_loader_1, test_loader_2, encoder,
 
     z_umap_1 = umap_op.fit_transform(z_data_1.detach().cpu().numpy())
     z_umap_2 = umap_op.fit_transform(z_data_2.detach().cpu().numpy())
-
-    colors_1 = np.array(cell_types_1)
-    colors_2 = np.array(cell_types_2)
+    # This is the encoded data
+    z_umap = np.concatenate((z_umap_1 ,z_umap_2), axis=0)
+    colors = np.concatenate((cell_types_1, cell_types_2), axis=0)
+        
     for i in maps.items():
-        colors_1 = np.where((colors_1 == i[1]), i[0], colors_1)
-    for i in maps.items():
-        colors_2 = np.where((colors_2 == i[1]), i[0], colors_2)
+        colors = np.where((colors == i[1]), i[0], colors)
 
-    fig = plt.figure(figsize = (20,7))
-    ax1 = fig.add_subplot(1,2,1)
+    fig = plt.figure(figsize = (20,16))
+    ax1 = fig.add_subplot(2,2,1)
     # Plot cells colored by batch ID
     ax1.scatter(z_umap_1[:,0], z_umap_1[:, 1],c = 'b', label = batches[0])
     ax1.scatter(z_umap_2[:,0], z_umap_2[:, 1],c = 'r', label = batches[1])
     ax1.title.set_text(title + ' by batch')
     ax1.set_xlabel("UMAP 1")
     ax1.set_ylabel("UMAP 2")
-    
-    ax2 = fig.add_subplot(1,2,2)
+
+    ax2 = fig.add_subplot(2,2,2)
     # Plot cells colored by cell type
-    ax2.scatter(z_umap_1[:,0], z_umap_1[:, 1],c = colors_1.astype(np.int), cmap = 'Spectral')
-    ax2.scatter(z_umap_2[:,0], z_umap_2[:, 1],c = colors_2.astype(np.int) , cmap = 'Spectral')
+    cmap = plt.cm.get_cmap('Paired', len(maps.items()))
+    ax2.scatter(z_umap[:,0], z_umap[:, 1],c = colors.astype(np.float))
     ax2.legend()
-    scatter = ax2.scatter(z_umap_2[:, 0], z_umap_2[:, 1], c = colors_2.astype(np.int))
+
+    scatter = ax2.scatter(z_umap[:, 0], z_umap[:, 1], c = colors.astype(np.int), cmap=cmap)
     handles, labels = scatter.legend_elements(prop="colors", alpha=0.6)
 
     legend2 = ax2.legend(handles, maps.values(), loc="upper right", title="cell types")
     ax2.title.set_text(title + ' by cell type')
     ax2.set_xlabel("UMAP 1")
     ax2.set_ylabel("UMAP 2")
+    
+    for data in test_loader_1:
+        z_data_1_raw = data["count"]
+        cell_types_1_raw = data['anno']
+
+    for data in test_loader_2:
+        z_data_2_raw = data["count"]
+        cell_types_2_raw = data['anno']
+
+    z_umap_1_raw = umap_op.fit_transform(z_data_1_raw.detach().cpu().numpy())
+    z_umap_2_raw = umap_op.fit_transform(z_data_2_raw.detach().cpu().numpy())
+    # This is the raw data
+    z_umap_raw = np.concatenate((z_umap_1_raw ,z_umap_2_raw), axis=0)
+    colors_raw = np.concatenate((cell_types_1_raw, cell_types_2_raw), axis=0)
+        
+    for i in maps.items():
+        colors_raw = np.where((colors_raw == i[1]), i[0], colors_raw)
+
+    ax3 = fig.add_subplot(2,2,3)
+    # Plot cells colored by batch ID
+    ax3.scatter(z_umap_1_raw[:,0], z_umap_1_raw[:, 1],c = 'b', label = batches[0])
+    ax3.scatter(z_umap_2_raw[:,0], z_umap_2_raw[:, 1],c = 'r', label = batches[1])
+    ax3.title.set_text("Raw data {} and {}".format(batches[0], batches[1]) + ' by batch')
+    ax3.set_xlabel("UMAP 1")
+    ax3.set_ylabel("UMAP 2")
+
+    ax4 = fig.add_subplot(2,2,4)
+    # Plot cells colored by cell type
+    cmap = plt.cm.get_cmap('Paired', len(maps.items()))
+    ax4.scatter(z_umap_raw[:,0], z_umap_raw[:, 1],c = colors_raw.astype(np.float))
+    ax4.legend()
+
+    scatter = ax4.scatter(z_umap_raw[:, 0], z_umap_raw[:, 1], c = colors_raw.astype(np.int), cmap=cmap)
+    handles, labels = scatter.legend_elements(prop="colors", alpha=0.6)
+
+    legend2 = ax4.legend(handles, maps.values(), loc="upper right", title="cell types")
+    ax4.title.set_text("Raw data {} and {}".format(batches[0], batches[1]) + ' by cell type')
+    ax4.set_xlabel("UMAP 1")
+    ax4.set_ylabel("UMAP 2")
     plt.tight_layout()
 
 # PLOT
