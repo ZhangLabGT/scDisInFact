@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
+from zinb import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def compute_pairwise_distances(x, y):
@@ -88,6 +89,7 @@ def _reduce_mean(x):
     x = _nan2zero(x)
     return torch.divide(torch.reduce_sum(x), nelem)
 
+'''
 class NB():
     def __init__(self, theta=None, masking=False, scope='nbinom_loss/',
                  scale_factor=1.0, debug=False):
@@ -166,6 +168,8 @@ class ZINB(NB):
         result = _nan2inf(result)
         
         return result
+'''
+
 class MMD_LOSS(nn.Module):
     def __init__(self):
         super().__init__()
