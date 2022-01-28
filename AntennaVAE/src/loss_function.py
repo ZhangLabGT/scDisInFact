@@ -170,6 +170,44 @@ class ZINB(NB):
         return result
 '''
 
+
+class TripletLoss(nn.Module):
+    def __init__(self,margin=0.3):
+      super(TripletLoss,self).__init__()
+      self.margin=margin
+      self.ranking_loss=nn.MarginRankingLoss(margin=margin)
+      
+    def forward(self,inputs,labels):
+      n=inputs.size(0)
+
+      # calculate pairwise distance (Euclidean, sqrt(x1^2 + x2^2 - 2x1x2)), using latent embeddings, of the shape (n_cells, n_cells)
+      dist=torch.pow(inputs,2).sum(dim=1,keepdim=True).expand(n,n)
+      dist=dist+dist.t()
+      dist.addmm_(1,-2,inputs,inputs.t())
+      dist=dist.clamp(min=1e-12).sqrt()
+      
+      # mask matrix of the shape (n_cells, n_cells), the element (n1, n2) -> 1 if cell n1 and cell n2 are of the same class, 0 otherwise
+      mask=labels.expand(n,n).eq(labels.expand(n,n).t())
+      #print(mask.shape)
+      #print(mask[0])
+      dist_ap,dist_an=[],[]
+      for i in range(n):
+        #print(i)
+        # find the largest distance to cell i in all positive pairs
+        dist_ap.append(dist[i][mask[i]].max().unsqueeze(0))
+        # find the smallest distance to cell i in all negative pairs
+        dist_an.append(dist[i][mask[i]==0].min().unsqueeze(0))
+      # list of max positive distances for each cell
+      dist_ap=torch.cat(dist_ap)
+      # list of min negative distances for each cell
+      dist_an=torch.cat(dist_an)
+      
+      y=torch.ones_like(dist_an)
+      # max(- y * (dist_an - dist_ap), 0), minimize positive distances and maximize negative distances
+      # if use for multi-classes, then different margin for different classes
+      loss=self.ranking_loss(dist_an,dist_ap,y)
+      return loss
+
 class MMD_LOSS(nn.Module):
     def __init__(self):
         super().__init__()
