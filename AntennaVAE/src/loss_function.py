@@ -89,87 +89,18 @@ def _reduce_mean(x):
     x = _nan2zero(x)
     return torch.divide(torch.reduce_sum(x), nelem)
 
-'''
-class NB():
-    def __init__(self, theta=None, masking=False, scope='nbinom_loss/',
-                 scale_factor=1.0, debug=False):
-        # for numerical stability
-        self.eps = 1e-10
-        self.scale_factor = scale_factor
-        self.debug = debug
-        self.scope = scope
-        self.masking = masking
-        self.theta = theta
+def convert_label_to_similarity(normed_feature, label):
+    similarity_matrix = normed_feature @ normed_feature.transpose(1, 0)
+    label_matrix = label.unsqueeze(1) == label.unsqueeze(0)
 
-    def loss(self, y_true, y_pred, mean=True):
-        scale_factor = self.scale_factor
-        eps = self.eps
-        
-        y_true = y_true.type(torch.float32)
-        y_pred = y_pred.type(torch.float32) * scale_factor
+    positive_matrix = label_matrix.triu(diagonal=1)
+    negative_matrix = label_matrix.logical_not().triu(diagonal=1)
 
-        if self.masking:
-            nelem = _nelem(y_true)
-            y_true = _nan2zero(y_true)
-
-        # Clip theta
-        theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
-
-        t1 = torch.lgamma(theta+eps) + torch.lgamma(y_true+1.0) - torch.lgamma(y_true+theta+eps)
-        t2 = (theta+y_true) * torch.log(1.0 + (y_pred/(theta+eps))) + (y_true * (torch.log(theta+eps) - torch.log(y_pred+eps)))
-        final = t1 + t2
-
-        final = _nan2inf(final)
-
-        if mean:
-            if self.masking:
-                final = torch.divide(torch.reduce_sum(final), nelem)
-            else:
-                final = torch.reduce_mean(final)
-
-        return final  
-
-class ZINB(NB):
-    def __init__(self, pi, ridge_lambda=0.0, scope='zinb_loss/', **kwargs):
-        super().__init__(scope=scope, **kwargs)
-        if not torch.is_tensor(pi):
-            self.pi = torch.tensor(pi).to(device)
-        else:
-            self.pi = pi
-        self.ridge_lambda = ridge_lambda
-
-    def loss(self, y_true, y_pred, mean=True):
-        scale_factor = self.scale_factor
-        eps = self.eps
-
-        # reuse existing NB neg.log.lik.
-        # mean is always False here, because everything is calculated
-        # element-wise. we take the mean only in the end
-        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps).to(device)-self.pi))
-        y_true = y_true.type(torch.float32)
-        
-        y_pred = y_pred.type(torch.float32) * scale_factor
-        theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
-
-        zero_nb = torch.pow(theta/(theta+y_pred+eps), theta)
-        zero_case = -torch.log(self.pi + ((1.0-self.pi)*zero_nb)+eps)
-        result = torch.where(torch.less(y_true, 1e-8), zero_case, nb_case)
-
-
-        ridge = self.ridge_lambda*torch.square(self.pi)
-        result += ridge
-
-        if mean:
-            if self.masking:
-                result = _reduce_mean(result) 
-            else:
-                result = torch.mean(result)
-
-        result = _nan2inf(result)
-        
-        return result
-'''
-
+    
+    similarity_matrix = similarity_matrix.view(-1)
+    positive_matrix = positive_matrix.view(-1)
+    negative_matrix = negative_matrix.view(-1)
+    return similarity_matrix[positive_matrix], similarity_matrix[negative_matrix]
 
 class TripletLoss(nn.Module):
     def __init__(self,margin=0.3):
@@ -207,7 +138,27 @@ class TripletLoss(nn.Module):
       # if use for multi-classes, then different margin for different classes
       loss=self.ranking_loss(dist_an,dist_ap,y)
       return loss
+class CircleLoss(nn.Module):
+    def __init__(self, m: float, gamma: float) -> None:
+        super(CircleLoss, self).__init__()
+        self.m = m
+        self.gamma = gamma
+        self.soft_plus = nn.Softplus()
 
+    def forward(self, inputs, labels):
+        sp, sn = convert_label_to_similarity(inputs, labels)
+        alpha_p = torch.clamp_min(- sp.detach() + 1 + self.m, min=0.)
+        alpha_n = torch.clamp_min(sn.detach() + self.m, min=0.)
+
+        delta_p = 1 - self.m
+        delta_n = self.m
+        
+        logit_p = - alpha_p * (sp - delta_p) * self.gamma
+        logit_n = alpha_n * (sn - delta_n) * self.gamma
+
+        loss = self.soft_plus(torch.logsumexp(logit_n, dim=0) + torch.logsumexp(logit_p, dim=0))
+
+        return loss
 class MMD_LOSS(nn.Module):
     def __init__(self):
         super().__init__()
@@ -216,31 +167,4 @@ class MMD_LOSS(nn.Module):
         loss_MSE = nn.MSELoss().forward(y_pred, y_true)
         loss_MMD = maximum_mean_discrepancy(y_pred, y_true)
         return (loss_MMD + loss_MSE)
-# MMD func from Kaggle
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# def MMD(x, y):
-#     '''
-#     Using gaussian kernel for MMD
-#     '''
-#     xx, yy, zz = torch.mm(x, x.t()), torch.mm(y, y.t()), torch.mm(x, y.t())
-#     rx = (xx.diag().unsqueeze(0).expand_as(xx))
-#     ry = (yy.diag().unsqueeze(0).expand_as(yy))
-#     print(xx, xx.diag(),xx.diag().unsqueeze(0), rx)
-#     dxx = rx.t() + rx - 2. * xx # Used for A in (1)
-#     dyy = ry.t() + ry - 2. * yy # Used for B in (1)
-#     dxy = rx.t() + ry - 2. * zz # Used for C in (1)
-    
-#     XX, YY, XY = (torch.zeros(xx.shape).to(device),
-#                   torch.zeros(xx.shape).to(device),
-#                   torch.zeros(xx.shape).to(device))
-    
-#     # applying kernel method
-#     sigmas = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 5, 10, 15, 20, 25, 30, 35, 100, 1e3, 1e4, 1e5, 1e6]
-#     for sigma in sigmas:
-#         XX += torch.exp(-0.5*dxx/sigma)
-#         YY += torch.exp(-0.5*dyy/sigma)
-#         XY += torch.exp(-0.5*dxy/sigma)
-
-#     return torch.mean(XX + YY - 2. * XY)
