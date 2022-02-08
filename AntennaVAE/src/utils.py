@@ -202,7 +202,7 @@ def plot_train(all_loss, type=None, batches=None):
 # newly added functions
 #######################################################################
 
-def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10), axis_label = "Latent", **kwargs):
+def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10), axis_label = "Latent", title = None,**kwargs):
     """\
     Description
         Plot latent space
