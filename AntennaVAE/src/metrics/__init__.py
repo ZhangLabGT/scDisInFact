@@ -1,3 +1,3 @@
-from .ari_nmi import ari_nmi
+from .ari_nmi import ari
 from .graph_connectivity import graph_connectivity
-from .kBET import kBET
+# from .kBET import kBET

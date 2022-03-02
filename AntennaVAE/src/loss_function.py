@@ -24,7 +24,7 @@ def _gaussian_kernel_matrix(x, y):
     return result
 
 
-def maximum_mean_discrepancy(x, y): #Function to calculate MMD value
+def _maximum_mean_discrepancy(x, y): #Function to calculate MMD value
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cost = torch.mean(_gaussian_kernel_matrix(x, x))
     cost += torch.mean(_gaussian_kernel_matrix(y, y))
@@ -35,44 +35,27 @@ def maximum_mean_discrepancy(x, y): #Function to calculate MMD value
 
     return cost
 
-# Loss
-def pinfo_loss(model, mask, norm = "l2"):
-    W = None
-    for _, layers in model.fc_layers.named_children():
-        for name, layer in layers.named_children():
-            if name[:3] == "lin":
-                if W is None:
-                    W = layer.weight
-                else:
-                    W = torch.mm(layer.weight,W)
-    if norm == "l2":
-        loss = torch.norm(mask.T * W, p = "fro")
-    else:
-        # l1 norm
-        loss = torch.sum(torch.abs(mask.T * W))
-    return loss
-
-
-
-def dist_loss(z, diff_sim, mask = None, mode = "mse"):
-    # cosine similarity loss
-    latent_sim = compute_pairwise_distances(z, z)
-    if mode == "mse":
-        latent_sim = latent_sim / torch.norm(latent_sim, p='fro')
-        diff_sim = diff_sim / torch.norm(diff_sim, p = 'fro')
-
-        if mask is not None:
-            loss_dist = torch.norm((diff_sim - latent_sim) * mask, p = 'fro')
-        else:   
-            loss_dist = torch.norm(diff_sim - latent_sim, p = 'fro')
+def maximum_mean_discrepancy(xs, ref_batch = 0, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')): #Function to calculate MMD value
+    nbatches = len(xs)
+    # assuming batch 0 is the reference batch
+    cost = 0
+    # within batch
+    for batch in range(nbatches):
+        if batch == ref_batch:
+            cost += (nbatches - 1) * torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch]))
+        else:
+            cost += torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch]))
     
-    elif mode == "kl":
-        # latent_sim = 1/(1 + latent_sim)
-        # diff_sim = 1/(1 + diff_sim)
-        Q_dist = latent_sim / torch.sum(latent_sim) + 1e-12
-        P_dist = diff_sim / torch.sum(diff_sim) + 1e-12
-        loss_dist = torch.sum(Q_dist * torch.log(Q_dist / P_dist))
-    return loss_dist
+    # between batches
+    for batch in range(1, nbatches):
+        cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs[ref_batch], xs[batch]))
+    
+    cost = torch.sqrt(cost ** 2 + 1e-9)
+    if cost.data.item()<0:
+        cost = torch.FloatTensor([0.0]).to(device)
+
+    return cost
+
 
 def _nan2inf(x):
     return torch.where(torch.isnan(x), torch.zeros_like(x)+np.inf, x)
@@ -138,6 +121,7 @@ class TripletLoss(nn.Module):
       # if use for multi-classes, then different margin for different classes
       loss=self.ranking_loss(dist_an,dist_ap,y)
       return loss
+
 class CircleLoss(nn.Module):
     def __init__(self, m: float, gamma: float) -> None:
         super(CircleLoss, self).__init__()
@@ -168,3 +152,37 @@ class MMD_LOSS(nn.Module):
         loss_MMD = maximum_mean_discrepancy(y_pred, y_true)
         return (loss_MMD + loss_MSE)
 
+class SupervisedContrastiveLoss(nn.Module):
+    def __init__(self, temperature=0.07):
+        """
+        Implementation of the loss described in the paper Supervised Contrastive Learning :
+        https://arxiv.org/abs/2004.11362
+        :param temperature: int
+        """
+        super(SupervisedContrastiveLoss, self).__init__()
+        self.temperature = temperature
+
+    def forward(self, projections, targets):
+        """
+        :param projections: torch.Tensor, shape [batch_size, projection_dim]
+        :param targets: torch.Tensor, shape [batch_size]
+        :return: torch.Tensor, scalar
+        """
+        device = torch.device("cuda") if projections.is_cuda else torch.device("cpu")
+
+        dot_product_tempered = torch.mm(projections, projections.T) / self.temperature
+        # Minus max for numerical stability with exponential. Same done in cross entropy. Epsilon added to avoid log(0)
+        exp_dot_tempered = (
+            torch.exp(dot_product_tempered - torch.max(dot_product_tempered, dim=1, keepdim=True)[0]) + 1e-5
+        )
+
+        mask_similar_class = (targets.unsqueeze(1).repeat(1, targets.shape[0]) == targets).to(device)
+        mask_anchor_out = (1 - torch.eye(exp_dot_tempered.shape[0])).to(device)
+        mask_combined = mask_similar_class * mask_anchor_out
+        cardinality_per_samples = torch.sum(mask_combined, dim=1)
+
+        log_prob = -torch.log(exp_dot_tempered / (torch.sum(exp_dot_tempered * mask_anchor_out, dim=1, keepdim=True)))
+        supervised_contrastive_loss_per_sample = torch.sum(log_prob * mask_combined, dim=1) / cardinality_per_samples
+        supervised_contrastive_loss = torch.mean(supervised_contrastive_loss_per_sample)
+
+        return supervised_contrastive_loss

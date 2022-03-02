@@ -1,6 +1,6 @@
 import torch
 
-from loss_function import ZINB, maximum_mean_discrepancy
+from loss_function import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Training    
 '''
@@ -142,3 +142,153 @@ def train_epoch_mmd(model_dict, train_data_loaders, test_data_loaders, optimizer
     return loss_tests, loss_mmd_tests, loss_zinb_tests
 
 ######################################################################################################################################################
+# Considering UTI label
+
+def train_epoch_mmd(model_dict, train_data_loaders, test_data_loaders, optimizer, 
+                    n_epoches = 100, interval = 10, use_zinb = True, contr_loss=None, time_dim = 5, group_dim = 5,
+                    lamb_mmd = 1e-3, lamb_pi = 1e-5, lamb_recon = 1, lamb_contr_time = 1e-1, lamb_contr_group = 5e-2,):
+    loss_zinb_tests = []
+    loss_mmd_tests = []
+    loss_tests = []
+    contr_loss_tests = []
+    # contr_loss_group = CircleLoss(m=0.25, gamma= 1e-1)
+    # contr_loss_group = SupervisedContrastiveLoss()
+    contr_feature_time = 'time_point'
+    contr_feature_group = 'group_id'
+    for epoch in range(n_epoches + 1):
+        # train the model
+        for data_batch in zip(*train_data_loaders):
+            loss_mmd = 0
+            loss_zinb = 0
+            loss_contr = 0
+            loss_contr_group = 0
+
+            zs_mmd = []
+            zs_contr = {}
+            zs_contr["time"] = []
+            zs_contr["group_id"] = []
+            labels_contr = {}
+            labels_contr["time"] = []
+            labels_contr["group_id"] = []
+            for idx, x in enumerate(data_batch):
+                z = model_dict["encoder"](x["count_stand"].to(device))
+                mu, pi, theta = model_dict["decoder"](z)
+                # negative log likelihood
+                if use_zinb:
+                    loss_zinb += ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(device), ridge_lambda = lamb_pi).loss(y_true = x["count"].to(device), y_pred = mu)
+                else:
+                    # if not use ZINB, then assume the data is Gaussian instead
+                    loss_zinb += (mu * x["libsize"].to(device) - x["count"].to(device)).pow(2).sum()
+
+                #############################################################################################################
+                # # OLD    
+                # # if there are more than 1 batch, calculate mmd loss between current batch and previous batch
+                # if (len(data_batch) >= 2) & (idx > 0):
+                # #     loss_mmd += maximum_mean_discrepancy(z_pre[:, group_dim_label:], z[:, group_dim_label:])
+                #     if contr_loss:
+                #         loss_contr += contr_loss(torch.cat((z[:, :time_dim], z_pre[:, :time_dim]), dim=0).to(device), torch.cat((x[contr_feature], label_pre), dim = 0).to(device))
+                #         loss_contr_group += contr_loss_group(torch.cat((z[:, time_dim:group_dim_label], z_pre[:, time_dim:group_dim_label]), dim=0).to(device), torch.cat((x[contr_feature_1], type_pre), dim = 0).to(device))
+                #     else:
+                #         loss_contr += torch.FloatTensor([0]).to(device)
+                # # else:
+                #     # loss_mmd += torch.FloatTensor([0]).to(device)
+
+                # z_pre = z.clone()
+                # label_pre = (x[contr_feature]).clone()
+                # type_pre = (x[contr_feature_1]).clone()
+
+                #############################################################################################################
+                # NEW
+                zs_mmd.append(z[:,(time_dim + group_dim):])
+                zs_contr["time"].append(z[:,:time_dim])
+                zs_contr["group_id"].append(z[:, time_dim:(time_dim + group_dim)])
+                labels_contr["time"].append(x[contr_feature_time])
+                labels_contr["group_id"].append(x[contr_feature_group])
+                
+
+            # print([x.shape for x in zs_mmd])
+            # print([x.shape for x in zs_contr["time"]])
+            # print([x.shape for x in zs_contr["group_id"]])
+            # print([x for x in labels_contr["time"]])
+            # print([x for x in labels_contr["group_id"]])
+
+            loss_mmd = maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0)
+            # contrastive loss: (latent embeddings, labels)
+            loss_contr = contr_loss(torch.cat(zs_contr["time"], dim=0), torch.cat(labels_contr["time"], dim = 0).to(device))
+            loss_contr_group = contr_loss(torch.cat(zs_contr["group_id"], dim=0), torch.cat(labels_contr["group_id"], dim = 0).to(device))
+            loss = lamb_recon * loss_zinb + lamb_mmd * loss_mmd + loss_contr * lamb_contr_time + loss_contr_group * lamb_contr_group
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # test the model
+        if epoch % interval == 0:
+            loss_mmd_test = 0
+            loss_zinb_test = 0 
+            loss_contr_test = 0
+            loss_contr_group_test = 0
+            for data_batch in zip(*test_data_loaders):
+                with torch.no_grad():
+                    zs_mmd = []
+                    zs_contr = {}
+                    zs_contr["time"] = []
+                    zs_contr["group_id"] = []
+                    labels_contr = {}
+                    labels_contr["time"] = []
+                    labels_contr["group_id"] = []
+
+                    for idx, x in enumerate(data_batch):
+                        z = model_dict["encoder"](x["count_stand"].to(device))
+                        mu, pi, theta = model_dict["decoder"](z)
+                        if use_zinb:
+                            loss_zinb_test += ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(device), ridge_lambda = lamb_pi).loss(y_true = x['count'].to(device), y_pred = mu)
+                        else:
+                            loss_zinb_test += (mu * x["libsize"].to(device) - x["count"].to(device)).pow(2).sum()
+
+                        #############################################################################################################
+                        # OLD
+                        # if (len(data_batch) >= 2) & (idx > 0):
+                        #     loss_mmd_test += maximum_mean_discrepancy(z_pre[:, group_dim_label:], z[:, group_dim_label:])
+
+                        #     if contr_loss:
+                        #         loss_contr_test += contr_loss(torch.cat((z[:, :time_dim], z_pre[:, :time_dim]), dim=0), torch.cat((x[contr_feature], label_pre)))
+                        #         loss_contr_group_test += contr_loss_group(torch.cat((z[:, time_dim:group_dim_label], z_pre[:, time_dim:group_dim_label]), dim=0), torch.cat((x[contr_feature_1], type_pre), dim = 0))
+                        #     else: 
+                        #         loss_contr_test = 0
+                        # else:
+                        #     loss_mmd_test += torch.FloatTensor([0]).to(device)
+                        # z_pre = z.clone()
+                        # label_pre = torch.Tensor(x[contr_feature]).clone()
+                        # type_pre = torch.Tensor(x[contr_feature_1]).clone()
+                        #############################################################################################################
+                
+                        # NEW
+                        zs_mmd.append(z[:,(time_dim + group_dim):])
+                        zs_contr["time"].append(z[:,:time_dim])
+                        zs_contr["group_id"].append(z[:, time_dim:(time_dim + group_dim)])
+                        labels_contr["time"].append(x[contr_feature_time])
+                        labels_contr["group_id"].append(x[contr_feature_group])
+                
+
+
+                    loss_mmd_test = maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0)
+                    # contrastive loss: (latent embeddings, labels)
+                    loss_contr_test = contr_loss(torch.cat(zs_contr["time"], dim=0), torch.cat(labels_contr["time"], dim = 0).to(device))
+                    loss_contr_group_test = contr_loss(torch.cat(zs_contr["group_id"], dim=0), torch.cat(labels_contr["group_id"], dim = 0).to(device))                            
+                    loss_test = lamb_recon * loss_zinb_test + lamb_mmd * loss_mmd_test + loss_contr_test * lamb_contr_time + loss_contr_group_test * lamb_contr_group
+
+            info = [
+                'mmd loss: {:.3f}'.format(loss_mmd_test.item()),
+                'ZINB loss: {:.3f}'.format(loss_zinb_test.item()),
+                'contrastive loss: {:.3f}'.format(loss_contr_test.item()),
+                'overall loss: {:.3f}'.format(loss_test.item()),
+            ]
+
+            print("epoch: ", epoch)
+            for i in info:
+                print("\t", i)
+            contr_loss_tests.append(loss_contr_test.item())
+            loss_mmd_tests.append(loss_mmd_test.item())
+            loss_zinb_tests.append(loss_zinb_test.item())
+            loss_tests.append(loss_test.item())
+    return loss_tests, loss_mmd_tests, loss_zinb_tests, contr_loss_tests
