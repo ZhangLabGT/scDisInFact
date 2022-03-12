@@ -71,12 +71,12 @@ le = LabelEncoder()
 
 # format: "Cohort Name": ([batch ids], time_point, UTI-label)
 batch_dict = {
-              'Control': ([4, 6], 0, 0),
-              'Leuk-UTI': ([3, 5], 1, 1),
-              'Int-URO': ([7, 11], 1, 1),
-              'URO': ([13, 15], 1, 1),
-              'Bac-SEP': ([31, 33], 2, 0),
-              'ICU-SEP': ([19, 29], 2, 0),
+            #   'Control': ([4, 6], 0, 0),
+              'Leuk-UTI': ([3, 5], 0),
+              'Int-URO': ([7, 11], 1),
+              'URO': ([13, 15], 2),
+            #   'Bac-SEP': ([31, 33], 2, 0),
+            #   'ICU-SEP': ([19, 29], 2, 0),
              }
 
 # Use all data but ICU-NoSEP, and use "group-id" to label whether this cohort includes UTI symptom,
@@ -188,8 +188,8 @@ param_to_optimize = [
 optim_ae = torch.optim.Adam(param_to_optimize, lr=lr)
 
 # use Circle loss to distinguish different time points
-# contrastive_loss = CircleLoss(m=0.25, gamma= 1e-2)
-contrastive_loss = TripletLoss(margin=0.3)
+contrastive_loss = CircleLoss(m=0.25, gamma= 80)
+# contrastive_loss = TripletLoss(margin=0.3)
 # contrastive_loss = torch.nn.CrossEntropyLoss()
 # contrastive_loss = SupConLoss()
 # contrastive_loss = SupervisedContrastiveLoss()
