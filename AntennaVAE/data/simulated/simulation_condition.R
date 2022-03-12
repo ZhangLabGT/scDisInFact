@@ -82,18 +82,18 @@ write.table(true_counts_res$cell_meta[cellset_batch4,1:2], sprintf("%s/cell_labe
 write.table(true_counts_res$cell_meta[cellset_batch5,1:2], sprintf("%s/cell_label5.txt", datapath), quote=F, row.names = F, col.names = T, sep = "\t")
 write.table(true_counts_res$cell_meta[cellset_batch6,1:2], sprintf("%s/cell_label6.txt", datapath), quote=F, row.names = F, col.names = T, sep = "\t")
 
-write.table(true_counts_res$cell_meta[cellset_batch1,3], sprintf("%s/pseudotime1.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
-write.table(true_counts_res$cell_meta[cellset_batch2,3], sprintf("%s/pseudotime2.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
-write.table(true_counts_res$cell_meta[cellset_batch3,3], sprintf("%s/pseudotime3.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
-write.table(true_counts_res$cell_meta[cellset_batch4,3], sprintf("%s/pseudotime4.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
-write.table(true_counts_res$cell_meta[cellset_batch5,3], sprintf("%s/pseudotime5.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
-write.table(true_counts_res$cell_meta[cellset_batch6,3], sprintf("%s/pseudotime6.txt", datapath), 
-            quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch1,3], sprintf("%s/pseudotime1.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch2,3], sprintf("%s/pseudotime2.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch3,3], sprintf("%s/pseudotime3.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch4,3], sprintf("%s/pseudotime4.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch5,3], sprintf("%s/pseudotime5.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
+# write.table(true_counts_res$cell_meta[cellset_batch6,3], sprintf("%s/pseudotime6.txt", datapath), 
+#             quote=F, row.names = F, col.names = F, sep = "\t")
 
 counts <- cbind(counts_batch1, counts_batch2, counts_batch3, counts_batch4, counts_batch5, counts_batch6)
 
