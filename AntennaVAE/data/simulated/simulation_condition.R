@@ -9,7 +9,7 @@ phyla1 <- Phyla3()
 
 ngenes <- 200
 ncells_total <- 10000
-min_popsize <- 1000
+min_popsize <- 3000
 Sigma <- 0.1
 nbatch <- 6
 # The true counts of the five populations can be simulated:
@@ -51,14 +51,14 @@ counts_batch6 <- observed_rnaseq_loBE[[1]][, cellset_batch6]
 # add time progressing genes
 # assume 40 genes changed, 20 genes growing, 20 genes reducing
 # counts_batch3[1:20,] <- counts_batch3[1:20,] + t(matrix(rowMeans(counts_batch3[1:20,]), nrow=dim(counts_batch3)[2], ncol=length(rowMeans(counts_batch3[1:20,])), byrow=TRUE)) * matrix(rnorm(20 * dim(counts_batch3)[2], mean = 1, sd = 1), 20, dim(counts_batch3)[2])
-counts_batch3[1:20,] <- counts_batch3[1:20,] + matrix(runif(20 * dim(counts_batch3)[2], min = 0, max = 2), 20, dim(counts_batch3)[2])
-counts_batch4[1:20,] <- counts_batch4[1:20,] + matrix(runif(20 * dim(counts_batch4)[2], min = 0, max = 2), 20, dim(counts_batch4)[2])
-counts_batch5[1:20,] <- counts_batch5[1:20,] + matrix(runif(20 * dim(counts_batch5)[2], min = 0, max = 4), 20, dim(counts_batch5)[2])
-counts_batch6[1:20,] <- counts_batch6[1:20,] + matrix(runif(20 * dim(counts_batch6)[2], min = 0, max = 4), 20, dim(counts_batch6)[2])
-counts_batch3[21:40,] <- counts_batch3[21:40,] + matrix(runif(20 * dim(counts_batch3)[2], min = -1, max = 0), 20, dim(counts_batch3)[2])
-counts_batch4[21:40,] <- counts_batch4[21:40,] + matrix(runif(20 * dim(counts_batch4)[2], min = -1, max = 0), 20, dim(counts_batch4)[2])
-counts_batch5[21:40,] <- counts_batch5[21:40,] + matrix(runif(20 * dim(counts_batch5)[2], min = -2, max = 0), 20, dim(counts_batch5)[2])
-counts_batch6[21:40,] <- counts_batch6[21:40,] + matrix(runif(20 * dim(counts_batch6)[2], min = -2, max = 0), 20, dim(counts_batch6)[2])
+counts_batch3[1:20,] <- counts_batch3[1:20,] + matrix(runif(20 * dim(counts_batch3)[2], min = 0, max = 20), 20, dim(counts_batch3)[2])
+counts_batch4[1:20,] <- counts_batch4[1:20,] + matrix(runif(20 * dim(counts_batch4)[2], min = 0, max = 20), 20, dim(counts_batch4)[2])
+counts_batch5[1:20,] <- counts_batch5[1:20,] + matrix(runif(20 * dim(counts_batch5)[2], min = 20, max = 40), 20, dim(counts_batch5)[2])
+counts_batch6[1:20,] <- counts_batch6[1:20,] + matrix(runif(20 * dim(counts_batch6)[2], min = 20, max = 40), 20, dim(counts_batch6)[2])
+counts_batch3[21:40,] <- counts_batch3[21:40,] + matrix(runif(20 * dim(counts_batch3)[2], min = -10, max = 0), 20, dim(counts_batch3)[2])
+counts_batch4[21:40,] <- counts_batch4[21:40,] + matrix(runif(20 * dim(counts_batch4)[2], min = -10, max = 0), 20, dim(counts_batch4)[2])
+counts_batch5[21:40,] <- counts_batch5[21:40,] + matrix(runif(20 * dim(counts_batch5)[2], min = -20, max = -10), 20, dim(counts_batch5)[2])
+counts_batch6[21:40,] <- counts_batch6[21:40,] + matrix(runif(20 * dim(counts_batch6)[2], min = -20, max = -10), 20, dim(counts_batch6)[2])
 # make sure all nonnegative
 counts_batch3[21:40,] <- pmax(counts_batch3[21:40,], 0)
 counts_batch4[21:40,] <- pmax(counts_batch4[21:40,], 0)
@@ -102,6 +102,14 @@ tsne_batches <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellse
 tsne_clusters <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellset_batch2, cellset_batch3, cellset_batch4, cellset_batch5, cellset_batch6),], data=log2(counts + 1), evf_type="discrete", n_pc=20, label='pop', saving = F, plotname="observed counts clusters (adjusted)")
 
 pdf(file=sprintf("%s/tsne.pdf", datapath))
+print(tsne_batches[[2]])
+print(tsne_clusters[[2]])
+dev.off()
+# Plot batches and clusters
+tsne_batches <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellset_batch2, cellset_batch3, cellset_batch4, cellset_batch5, cellset_batch6),], data=log2(counts[1:40,] + 1), evf_type="discrete", n_pc=20, label='batch', saving = F, plotname="observed counts  batches (adjusted)")
+tsne_clusters <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellset_batch2, cellset_batch3, cellset_batch4, cellset_batch5, cellset_batch6),], data=log2(counts[1:40,] + 1), evf_type="discrete", n_pc=20, label='pop', saving = F, plotname="observed counts clusters (adjusted)")
+
+pdf(file=sprintf("%s/tsne_time.pdf", datapath))
 print(tsne_batches[[2]])
 print(tsne_clusters[[2]])
 dev.off()
