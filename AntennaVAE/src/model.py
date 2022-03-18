@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import collections
+import torch.nn.functional as F
 
 class FC(nn.Module):
     def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True, act_func_type='relu'):
@@ -116,3 +117,42 @@ class OutputLayer(nn.Module):
         Pi = self.pi_layer(decodedData)
         Theta = self.theta_layer(decodedData)
         return Miu, Pi, Theta
+
+class classifier(nn.Module):
+    def __init__(self, features, dropout_rate = 0.0, negative_slop = 0.2):
+        super().__init__()
+        # use a two layers network
+        self.fc = FC(features = features[:-1], dropout_rate = dropout_rate, negative_slope = negative_slop, use_bias = True)
+        self.output = nn.Linear(features[-2], features[-1])
+
+    def forward(self, x):
+        x = self.fc(x)
+        x = self.output(x)
+        return x # F.softmax(x, dim = 1)
+
+################################################
+#
+# variational auto-encoder
+#
+################################################
+
+class Encoder_var(nn.Module):
+    def __init__(self, features = [1024, 256, 32, 8], dropout_rate = 0.1, negative_slope = 0.2):
+        super(Encoder_var,self).__init__()
+        
+        self.features = features
+        if len(features) > 2:
+            self.fc = FC(
+                features = features[:-1],
+                dropout_rate = dropout_rate,
+                negative_slope = negative_slope,
+                use_bias = True
+            )
+        self.mean_layer = nn.Linear(features[-2], features[-1])
+        self.var_layer = nn.Linear(features[-2], features[-1])
+    def forward(self, x):
+        if len(self.features) > 2:
+            x = self.fc(x)
+        mu = self.mean_layer(x)
+        var = self.var_layer(x)
+        return mu, var
