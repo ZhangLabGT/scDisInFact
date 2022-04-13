@@ -186,3 +186,23 @@ class SupervisedContrastiveLoss(nn.Module):
         supervised_contrastive_loss = torch.mean(supervised_contrastive_loss_per_sample)
 
         return supervised_contrastive_loss
+
+
+def grouplasso(W, alpha = 1e-4):
+    '''
+    Definition:
+    -----------
+        Calculate the L1/2 norm or group lasso of parameter matrix W, with smoothing
+    Parameters:
+    -----------
+        W: of the shape (out_features, in_features), l2 norm is calculated on out_features (axis = 0), l1 is calculated on in_features (axis = 1)
+        alpha: smooth parameter, no smoothing if alpha = 0
+    Returns:
+    -----------
+        loss_gl: the L1/2 norm loss term
+    '''
+    # l2 norm on rows
+    l2_norm = W.pow(2).sum(dim=0).add(1e-8).pow(1/2.)
+    # group lasso + smoothing term
+    loss_gl = torch.sum((l2_norm >= alpha) * l2_norm + (l2_norm < alpha) * (W.pow(2).sum(dim=0).add(1e-8)/(2*alpha + 1e-8) + alpha/2))
+    return loss_gl

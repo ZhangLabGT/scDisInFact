@@ -21,6 +21,7 @@
 # save file https://docs.docker.com/storage/
 # build -t name directory, -f allows outside build context
 # sudo docker build -f Dockerfile -t symsim .
+# sudo docker run -v xxxxx:xxxxx [-it] [--rm] symsim
 
 FROM symsim:latest
 # run script
