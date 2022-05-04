@@ -7,11 +7,14 @@ library("SymSim")
 # When there are multiple populations, users need to provide a tree. A tree with five leaves (five populations) can be generated as follows:
 phyla1 <- Phyla3()
 
-ngenes <- 200
+ngenes <- 500
 ncells_total <- 10000
-min_popsize <- 3000
+min_popsize <- 1000
 Sigma <- 0.1
 nbatch <- 6
+diff <- 2
+n_diff_genes <- 20
+
 # The true counts of the five populations can be simulated:
 true_counts_res <- SimulateTrueCounts(ncells_total=ncells_total, min_popsize=min_popsize, i_minpop=2, ngenes=ngenes, nevf=10, evf_type="discrete", n_de_evf=9, vary="s", Sigma=Sigma, phyla=phyla1, randseed=0)
 true_counts_res_dis <- true_counts_res
@@ -50,23 +53,22 @@ counts_batch6 <- observed_rnaseq_loBE[[1]][, cellset_batch6]
 
 # add time progressing genes
 # assume 40 genes changed, 20 genes growing, 20 genes reducing
-# counts_batch3[1:20,] <- counts_batch3[1:20,] + t(matrix(rowMeans(counts_batch3[1:20,]), nrow=dim(counts_batch3)[2], ncol=length(rowMeans(counts_batch3[1:20,])), byrow=TRUE)) * matrix(rnorm(20 * dim(counts_batch3)[2], mean = 1, sd = 1), 20, dim(counts_batch3)[2])
-counts_batch3[1:20,] <- counts_batch3[1:20,] + matrix(runif(20 * dim(counts_batch3)[2], min = 0, max = 20), 20, dim(counts_batch3)[2])
-counts_batch4[1:20,] <- counts_batch4[1:20,] + matrix(runif(20 * dim(counts_batch4)[2], min = 0, max = 20), 20, dim(counts_batch4)[2])
-counts_batch5[1:20,] <- counts_batch5[1:20,] + matrix(runif(20 * dim(counts_batch5)[2], min = 20, max = 40), 20, dim(counts_batch5)[2])
-counts_batch6[1:20,] <- counts_batch6[1:20,] + matrix(runif(20 * dim(counts_batch6)[2], min = 20, max = 40), 20, dim(counts_batch6)[2])
-counts_batch3[21:40,] <- counts_batch3[21:40,] + matrix(runif(20 * dim(counts_batch3)[2], min = -10, max = 0), 20, dim(counts_batch3)[2])
-counts_batch4[21:40,] <- counts_batch4[21:40,] + matrix(runif(20 * dim(counts_batch4)[2], min = -10, max = 0), 20, dim(counts_batch4)[2])
-counts_batch5[21:40,] <- counts_batch5[21:40,] + matrix(runif(20 * dim(counts_batch5)[2], min = -20, max = -10), 20, dim(counts_batch5)[2])
-counts_batch6[21:40,] <- counts_batch6[21:40,] + matrix(runif(20 * dim(counts_batch6)[2], min = -20, max = -10), 20, dim(counts_batch6)[2])
+counts_batch3[1:n_diff_genes,] <- counts_batch3[1:n_diff_genes,] + matrix(runif(n_diff_genes * dim(counts_batch3)[2], min = 0, max = diff), n_diff_genes, dim(counts_batch3)[2])
+counts_batch4[1:n_diff_genes,] <- counts_batch4[1:n_diff_genes,] + matrix(runif(n_diff_genes * dim(counts_batch4)[2], min = 0, max = diff), n_diff_genes, dim(counts_batch4)[2])
+counts_batch5[1:n_diff_genes,] <- counts_batch5[1:n_diff_genes,] + matrix(runif(n_diff_genes * dim(counts_batch5)[2], min = 0, max = 2*diff), n_diff_genes, dim(counts_batch5)[2])
+counts_batch6[1:n_diff_genes,] <- counts_batch6[1:n_diff_genes,] + matrix(runif(n_diff_genes * dim(counts_batch6)[2], min = 0, max = 2*diff), n_diff_genes, dim(counts_batch6)[2])
+counts_batch3[(n_diff_genes+1):(2*n_diff_genes),] <- counts_batch3[(n_diff_genes+1):(2*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch3)[2], min = -0.5*diff, max = 0), n_diff_genes, dim(counts_batch3)[2])
+counts_batch4[(n_diff_genes+1):(2*n_diff_genes),] <- counts_batch4[(n_diff_genes+1):(2*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch4)[2], min = -0.5*diff, max = 0), n_diff_genes, dim(counts_batch4)[2])
+counts_batch5[(n_diff_genes+1):(2*n_diff_genes),] <- counts_batch5[(n_diff_genes+1):(2*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch5)[2], min = -diff, max = 0), n_diff_genes, dim(counts_batch5)[2])
+counts_batch6[(n_diff_genes+1):(2*n_diff_genes),] <- counts_batch6[(n_diff_genes+1):(2*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch6)[2], min = -diff, max = 0), n_diff_genes, dim(counts_batch6)[2])
 # make sure all nonnegative
-counts_batch3[21:40,] <- pmax(counts_batch3[21:40,], 0)
-counts_batch4[21:40,] <- pmax(counts_batch4[21:40,], 0)
-counts_batch5[21:40,] <- pmax(counts_batch5[21:40,], 0)
-counts_batch6[21:40,] <- pmax(counts_batch6[21:40,], 0)
+counts_batch3[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch3[(n_diff_genes+1):(2*n_diff_genes),], 0)
+counts_batch4[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch4[(n_diff_genes+1):(2*n_diff_genes),], 0)
+counts_batch5[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch5[(n_diff_genes+1):(2*n_diff_genes),], 0)
+counts_batch6[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch6[(n_diff_genes+1):(2*n_diff_genes),], 0)
 
 
-datapath <- "/symsim/dataset1"
+datapath <- paste0("dataset_", ncells_total, "_", ngenes, "_", Sigma, "_", n_diff_genes, "_", diff)
 system(sprintf("mkdir %s", datapath))
 write.table(counts_batch1, sprintf("%s/GxC1.txt", datapath), quote=F, row.names = F, col.names = F, sep = "\t")
 write.table(counts_batch2, sprintf("%s/GxC2.txt", datapath), quote=F, row.names = F, col.names = F, sep = "\t")
@@ -105,12 +107,3 @@ pdf(file=sprintf("%s/tsne.pdf", datapath))
 print(tsne_batches[[2]])
 print(tsne_clusters[[2]])
 dev.off()
-# Plot batches and clusters
-tsne_batches <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellset_batch2, cellset_batch3, cellset_batch4, cellset_batch5, cellset_batch6),], data=log2(counts[1:40,] + 1), evf_type="discrete", n_pc=20, label='batch', saving = F, plotname="observed counts  batches (adjusted)")
-tsne_clusters <- PlotTsne(meta=observed_rnaseq_loBE[[2]][c(cellset_batch1, cellset_batch2, cellset_batch3, cellset_batch4, cellset_batch5, cellset_batch6),], data=log2(counts[1:40,] + 1), evf_type="discrete", n_pc=20, label='pop', saving = F, plotname="observed counts clusters (adjusted)")
-
-pdf(file=sprintf("%s/tsne_time.pdf", datapath))
-print(tsne_batches[[2]])
-print(tsne_clusters[[2]])
-dev.off()
-# write.table(observed_counts[[1]], file = "obs_counts.csv", quote = FALSE, sep = ",", row.names = FALSE, col.names = FALSE)
