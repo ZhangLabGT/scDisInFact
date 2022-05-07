@@ -30,7 +30,7 @@ class NB():
         nb_loss = nb.loss(y_true = mean_x, y_pred = x)        
     """
     def __init__(self, theta=None, masking=False, scope='nbinom_loss/',
-                 scale_factor=1.0, debug=False):
+                 scale_factor=1.0, debug=False, device = device):
         """\
         Parameters:
         -----------
@@ -45,6 +45,7 @@ class NB():
         self.scope = scope
         self.masking = masking
         self.theta = theta
+        self.device = device
 
     def loss(self, y_true, y_pred, mean=True):
         """\
@@ -65,8 +66,8 @@ class NB():
             y_true = _nan2zero(y_true)
 
         # Clip theta
-        # theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
-        theta = self.theta.clamp(min = None, max = 1e6).to(device)
+        # theta = torch.minimum(self.theta, torch.tensor(1e6).to(self.device))
+        theta = self.theta.clamp(min = None, max = 1e6).to(self.device)
 
         t1 = torch.lgamma(theta+eps) + torch.lgamma(y_true+1.0) - torch.lgamma(y_true+theta+eps)
         t2 = (theta+y_true) * torch.log(1.0 + (y_pred/(theta+eps))) + (y_true * (torch.log(theta+eps) - torch.log(y_pred+eps)))
@@ -106,7 +107,7 @@ class ZINB(NB):
         """
         super().__init__(scope=scope, **kwargs)
         if not torch.is_tensor(pi):
-            self.pi = torch.tensor(pi).to(device)
+            self.pi = torch.tensor(pi).to(self.device)
         else:
             self.pi = pi
         self.ridge_lambda = ridge_lambda
@@ -128,14 +129,14 @@ class ZINB(NB):
         # mean is always False here, because everything is calculated
         # element-wise. we take the mean only in the end
         # -log((1-pi) * NB(x; mu, theta)) = - log(1 - pi) + nb.loss(x; mu, theta)
-        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps).to(device)-self.pi))
+        nb_case = super().loss(y_true, y_pred, mean=False) - torch.log((torch.tensor(1.0+eps).to(self.device)-self.pi))
         y_true = y_true.type(torch.float32)
         
         # scale the observed (normalized) counts by the scaling factor
         y_pred = y_pred.type(torch.float32) * scale_factor
         # compute elementwise minimum between self.theta and 1e6, make sure all values are not inf
         # theta = torch.minimum(self.theta, torch.tensor(1e6).to(device))
-        theta = self.theta.clamp(min = None, max = 1e6).to(device)
+        theta = self.theta.clamp(min = None, max = 1e6).to(self.device)
 
         # calculate the negative log-likelihood of the zero inflation part
         # first calculate zero_nb = (theta/(theta + x))^theta

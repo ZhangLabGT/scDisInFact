@@ -154,12 +154,12 @@ class scdisinfact_ae(nn.Module):
                     z = torch.concat((z_c, z_d), dim = 1)
                     mu, pi, theta = self.Dec(z)
                     # calculate the reconstruction loss
-                    loss_recon += loss_func.ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(self.device), ridge_lambda = lamb_pi).loss(y_true = x["count"].to(self.device), y_pred = mu)
+                    loss_recon += loss_func.ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(self.device), ridge_lambda = lamb_pi, device = self.device).loss(y_true = x["count"].to(self.device), y_pred = mu)
                     # NOTE: calculate the group lasso for common encoder, we corrently don't need to use group lasso
                     loss_gl_c += 0 # loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight)
                     zs_mmd.append(z_c)
                                 
-                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0)
+                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0, device = self.device)
                 loss = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd + self.lambs[4] * loss_gl_c                
                 loss.backward()
 
@@ -232,9 +232,9 @@ class scdisinfact_ae(nn.Module):
                         loss_gl_c_test += loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight, alpha = 1e-2)
                         loss_gl_d_test += loss_func.grouplasso(self.Enc_d.fc.fc_layers[0].linear.weight, alpha = 1e-2)
                         loss_class_test += ce_loss(input = d_pred, target = dataset.diff_label.to(self.device))
-                        loss_recon_test += loss_func.ZINB(pi = pi, theta = theta, scale_factor = dataset.libsizes.to(self.device), ridge_lambda = lamb_pi).loss(y_true = dataset.counts.to(self.device), y_pred = mu)
+                        loss_recon_test += loss_func.ZINB(pi = pi, theta = theta, scale_factor = dataset.libsizes.to(self.device), ridge_lambda = lamb_pi, device = self.device).loss(y_true = dataset.counts.to(self.device), y_pred = mu)
                     
-                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0)
+                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0, device = self.device)
                     loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test + self.lambs[4] * (loss_gl_d_test+loss_gl_c_test)
                     # loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test
 

@@ -296,6 +296,6 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
             axs[batch].spines['right'].set_visible(False)
             axs[batch].spines['top'].set_visible(False)  
         
-        
+    plt.tight_layout()    
     if save:
         fig.savefig(save, bbox_inches = "tight")

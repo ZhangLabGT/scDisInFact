@@ -14,8 +14,7 @@ def compute_pairwise_distances(x, y):
     return torch.clamp(dist, 0.0, np.inf)
 
 
-def _gaussian_kernel_matrix(x, y):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def _gaussian_kernel_matrix(x, y, device):
     sigmas = torch.FloatTensor([1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 5, 10, 15, 20, 25, 30, 35, 100, 1e3, 1e4, 1e5, 1e6]).to(device)
     dist = compute_pairwise_distances(x, y)
     beta = 1. / (2. * sigmas[:,None])
@@ -24,31 +23,21 @@ def _gaussian_kernel_matrix(x, y):
     return result
 
 
-def _maximum_mean_discrepancy(x, y): #Function to calculate MMD value
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    cost = torch.mean(_gaussian_kernel_matrix(x, x))
-    cost += torch.mean(_gaussian_kernel_matrix(y, y))
-    cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(x, y))
-    cost = torch.sqrt(cost ** 2 + 1e-9)
-    if cost.data.item()<0:
-        cost = torch.FloatTensor([0.0]).to(device)
 
-    return cost
-
-def maximum_mean_discrepancy(xs, ref_batch = 0, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')): #Function to calculate MMD value
+def maximum_mean_discrepancy(xs, ref_batch = 0, device = device): #Function to calculate MMD value
     nbatches = len(xs)
     # assuming batch 0 is the reference batch
     cost = 0
     # within batch
     for batch in range(nbatches):
         if batch == ref_batch:
-            cost += (nbatches - 1) * torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch]))
+            cost += (nbatches - 1) * torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch], device))
         else:
-            cost += torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch]))
+            cost += torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch], device))
     
     # between batches
     for batch in range(1, nbatches):
-        cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs[ref_batch], xs[batch]))
+        cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs[ref_batch], xs[batch], device))
     
     cost = torch.sqrt(cost ** 2 + 1e-9)
     if cost.data.item()<0:

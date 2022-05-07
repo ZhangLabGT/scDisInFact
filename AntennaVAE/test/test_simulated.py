@@ -151,26 +151,26 @@ lambs = [1, 0.5, 10, 0.1, 0.1]
 contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
 # contr_loss = SupervisedContrastiveLoss()
 model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
-losses = model1.train(nepochs = 100)
-torch.save(model1.state_dict(), result_dir + "model.pth")
+# losses = model1.train(nepochs = 100)
+# torch.save(model1.state_dict(), result_dir + "model.pth")
 model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
 # In[] Plot the loss curve
-loss_test, loss_recon, loss_mmd, loss_class, loss_gl_d, loss_gl_c = losses
+# loss_test, loss_recon, loss_mmd, loss_class, loss_gl_d, loss_gl_c = losses
 
-iters = np.arange(1, len(loss_gl_c)+1)
-fig = plt.figure(figsize = (40, 10))
-ax = fig.add_subplot()
-ax.plot(iters, loss_gl_c, "-*", label = 'Group Lasso common')
-ax.plot(iters, loss_gl_d, "-*", label = 'Group Lasso diff')
-ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-ax.set_yscale('log')
-for i, j in zip(iters, loss_gl_c):
-    ax.annotate("{:.3f}".format(j),xy=(i,j))
-for i, j in zip(iters, loss_gl_d):
-    ax.annotate("{:.3f}".format(j),xy=(i,j))
+# iters = np.arange(1, len(loss_gl_c)+1)
+# fig = plt.figure(figsize = (40, 10))
+# ax = fig.add_subplot()
+# ax.plot(iters, loss_gl_c, "-*", label = 'Group Lasso common')
+# ax.plot(iters, loss_gl_d, "-*", label = 'Group Lasso diff')
+# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+# ax.set_yscale('log')
+# for i, j in zip(iters, loss_gl_c):
+#     ax.annotate("{:.3f}".format(j),xy=(i,j))
+# for i, j in zip(iters, loss_gl_d):
+#     ax.annotate("{:.3f}".format(j),xy=(i,j))
 
-fig.savefig(result_dir+'/gl_both_ent_loss.png', bbox_inches = "tight")
+# fig.savefig(result_dir+'/gl_both_ent_loss.png', bbox_inches = "tight")
 
 # In[] Plot results
 z_cs = []
@@ -216,46 +216,46 @@ for batch in range(n_batches):
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 comment = r'circle_{}_{}_{}_'.format(m, gamma, lambs[-1])
 
-utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6)
-utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6)
-utils.plot_latent(zs = z_ds_umaps, annos = label_annos, mode = "joint", save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6)
-utils.plot_latent(zs = z_ds_umaps, annos = label_conditions, mode = "joint", save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6)
+utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
 
-utils.plot_latent(zs = zs_umaps, annos = label_annos, mode = "joint", save = (result_dir + comment+"all_dims_celltypes.png") if result_dir else None , markerscale = 6)
-utils.plot_latent(zs = zs_umaps, annos = label_batches, mode = "joint", save = (result_dir + comment+"all_dims_batches.png".format()) if result_dir else None, markerscale = 6)
-utils.plot_latent(zs = zs_umaps, annos = label_conditions, mode = "joint", save = (result_dir + comment+"all_dims_condition.png".format()) if result_dir else None, markerscale = 6)   
+utils.plot_latent(zs = zs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = zs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = zs_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)   
 
 
 # In[] Calculate AUPRC score
-plt.rcParams["font.size"] = 20
+# plt.rcParams["font.size"] = 20
 
-simulated_lists = [
- 'dataset_10000_500_0.4_20_0.5',
- 'dataset_10000_500_0.4_20_1',
- 'dataset_10000_500_0.4_20_2',
- 'dataset_10000_500_0.4_20_4']
+# simulated_lists = [
+#  'dataset_10000_500_0.4_20_0.5',
+#  'dataset_10000_500_0.4_20_1',
+#  'dataset_10000_500_0.4_20_2',
+#  'dataset_10000_500_0.4_20_4']
 
-gt = np.zeros((1, 500))
-gt[:,:20] = 1
-auprc_dict = {}
-auprc_dict = {} 
-for dataset_dir in simulated_lists:
-    result_dir = './simulated/'+dataset_dir + "/"
-    model_params = torch.load(result_dir + "model.pth")
-    inf = np.array(model_params["Enc_d.fc.fc_layers.Layer 0.linear.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))
-    auprc_dict[dataset_dir] = bmk.compute_auprc(inf, gt)
+# gt = np.zeros((1, 500))
+# gt[:,:20] = 1
+# auprc_dict = {}
+# auprc_dict = {} 
+# for dataset_dir in simulated_lists:
+#     result_dir = './simulated/'+dataset_dir + "/"
+#     model_params = torch.load(result_dir + "model.pth")
+#     inf = np.array(model_params["Enc_d.fc.fc_layers.Layer 0.linear.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))
+#     auprc_dict[dataset_dir] = bmk.compute_auprc(inf, gt)
 
-# plot bar chart
-st_dict = sorted(auprc_dict.items())
-x, y = list(zip(*st_dict))
-plt_y = np.array(list(y))/0.04
-plt_x = [i[18:] for i in np.array(list(x))]
-fig = plt.figure(figsize = (10, 7))
-ax = fig.add_subplot()
-ax.bar(plt_x, plt_y, width = 0.4, color = 'bbbb')
-show_values_on_bars(ax)
-ax.set_xticklabels(["0.5", "1", "2", "4"])
-ax.set_xlabel("Perturbation parameter")
-ax.set_ylabel("AUPRC Ratio")
-fig.savefig("simulated/AUPRC_ratio.png", bbox_inches = "tight")
+# # plot bar chart
+# st_dict = sorted(auprc_dict.items())
+# x, y = list(zip(*st_dict))
+# plt_y = np.array(list(y))/0.04
+# plt_x = [i[18:] for i in np.array(list(x))]
+# fig = plt.figure(figsize = (10, 7))
+# ax = fig.add_subplot()
+# ax.bar(plt_x, plt_y, width = 0.4, color = 'bbbb')
+# show_values_on_bars(ax)
+# ax.set_xticklabels(["0.5", "1", "2", "4"])
+# ax.set_xlabel("Perturbation parameter")
+# ax.set_ylabel("AUPRC Ratio")
+# fig.savefig("simulated/AUPRC_ratio.png", bbox_inches = "tight")
 # %%
