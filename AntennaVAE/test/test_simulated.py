@@ -227,35 +227,61 @@ utils.plot_latent(zs = zs_umaps, annos = label_conditions, mode = "joint", axis_
 
 
 # In[] Calculate AUPRC score
-# plt.rcParams["font.size"] = 20
+plt.rcParams["font.size"] = 20
 
-# simulated_lists = [
-#  'dataset_10000_500_0.4_20_0.5',
-#  'dataset_10000_500_0.4_20_1',
-#  'dataset_10000_500_0.4_20_2',
-#  'dataset_10000_500_0.4_20_4']
+simulated_lists = [
+ 'dataset_10000_500_0.4_20_0.5',
+ 'dataset_10000_500_0.4_20_1',
+ 'dataset_10000_500_0.4_20_2',
+ 'dataset_10000_500_0.4_20_4']
 
-# gt = np.zeros((1, 500))
-# gt[:,:20] = 1
-# auprc_dict = {}
-# auprc_dict = {} 
-# for dataset_dir in simulated_lists:
-#     result_dir = './simulated/'+dataset_dir + "/"
-#     model_params = torch.load(result_dir + "model.pth")
-#     inf = np.array(model_params["Enc_d.fc.fc_layers.Layer 0.linear.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))
-#     auprc_dict[dataset_dir] = bmk.compute_auprc(inf, gt)
+gt = np.zeros((1, 500))
+gt[:,:20] = 1
+auprc_dict = {}
+for dataset_dir in simulated_lists:
+    result_dir = './simulated/'+dataset_dir + "/"
+    model_params = torch.load(result_dir + "model.pth")
+    inf = np.array(model_params["Enc_d.fc.fc_layers.Layer 0.linear.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))
+    auprc_dict[dataset_dir] = bmk.compute_auprc(inf, gt)
 
-# # plot bar chart
-# st_dict = sorted(auprc_dict.items())
-# x, y = list(zip(*st_dict))
-# plt_y = np.array(list(y))/0.04
-# plt_x = [i[18:] for i in np.array(list(x))]
-# fig = plt.figure(figsize = (10, 7))
-# ax = fig.add_subplot()
-# ax.bar(plt_x, plt_y, width = 0.4, color = 'bbbb')
-# show_values_on_bars(ax)
-# ax.set_xticklabels(["0.5", "1", "2", "4"])
-# ax.set_xlabel("Perturbation parameter")
-# ax.set_ylabel("AUPRC Ratio")
-# fig.savefig("simulated/AUPRC_ratio.png", bbox_inches = "tight")
+# plot bar chart
+st_dict = sorted(auprc_dict.items())
+x, y = list(zip(*st_dict))
+plt_y = np.array(list(y))/0.04
+plt_x = [i[18:] for i in np.array(list(x))]
+fig = plt.figure(figsize = (10, 7))
+ax = fig.add_subplot()
+ax.bar(plt_x, plt_y, width = 0.4, color = 'bbbb')
+show_values_on_bars(ax)
+ax.set_xticklabels(["0.5", "1", "2", "4"])
+ax.set_xlabel("Perturbation parameter")
+ax.set_ylabel("AUPRC Ratio")
+fig.savefig("simulated/AUPRC_ratio.png", bbox_inches = "tight")
+
+
+# In[]
+from sklearn.metrics import precision_recall_curve
+sim_data = simulated_lists[0]
+gt = np.zeros((1, 500))
+gt[:,:20] = 1
+result_dir = './simulated/'+sim_data + "/"
+model_params = torch.load(result_dir + "model.pth")
+inf = np.array(model_params["Enc_d.fc.fc_layers.Layer 0.linear.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))
+auprc_dict[dataset_dir] = bmk.compute_auprc(inf, gt)
+inf = np.abs(inf)
+gt = np.abs(gt)
+gt = (gt > 1e-6).astype(int)
+inf = (inf - np.min(inf))/(np.max(inf) - np.min(inf) + 1e-12)
+prec, recall, thresholds = precision_recall_curve(y_true=gt.reshape(-1,), probas_pred=inf.reshape(-1,), pos_label=1)
+
+prec_random = np.array([20/500] * recall.shape[0]) 
+fig = plt.figure(figsize = (10, 7))
+ax = fig.add_subplot()
+ax.plot(recall, prec, "-*", label = "scDisInFact")
+ax.plot(recall, prec_random, "-*", label = "Random")
+ax.set_xlabel("Recall")
+ax.set_ylabel("Precision")
+ax.legend()
+fig.savefig(result_dir + "AURPC_curve.png", bbox_inches = "tight")
+
 # %%

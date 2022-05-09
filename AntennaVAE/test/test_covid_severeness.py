@@ -102,7 +102,7 @@ batch_dict = {'critical':[[1, 49, 86, 89], 2],
               'control':[[61, 62, 67, 81], 0]
 }
 batch_dict_only_prog = {'critical':[[1, 2, 80], 1],
-              'moderate':[[11, 23, 230], 0],
+              'moderate':[[11, 23, 140], 0],
 #               'moderate':[[94, 95, 96], 1], 
 #                         95 and 96 are BALF
 #               'control':[[61, 62, 67, 81], 0]
@@ -132,6 +132,31 @@ batch_only_balf = {
                    'moderate':[[11, 96], 1],
 }
 
+batch_sex_prog_cri = {
+                   'F':[[1, 2], 1],
+                   'M':[[263, 89], 2],
+}
+batch_sex_con_cri = {
+                   'F':[[51, 126], 1],
+                   'M':[[40, 50], 2],
+}
+batch_sex_con_mod = {
+                   'F':[[58, 74], 1],
+                   'M':[[60, 133], 2],
+}
+batch_sex_comb = {
+                   'F-moderate':[[58, 74], 1],
+                   'F-critical':[[51, 126], 1],
+                   'M-moderate':[[60, 133], 2],
+                   'M-critical':[[40, 50], 2],
+}
+batch_sex_comb_pro_con = {
+                   'F-conv-moderate':[[58, 74], 1],
+                   'F-prog-critical':[[1, 2], 1],
+                   'M-conv-moderate':[[60, 133], 2],
+                   'M-prog-critical':[[263, 89], 2],
+}
+
 n = 0
 for severity, label in batch_dict_only_prog.items():
     idxes = label[0]
@@ -153,9 +178,43 @@ for severity, label in batch_dict_only_prog.items():
 n_batches = len(datasets)
 
 # In[]
+# check the visualization before integration
+umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
+counts_norms = []
+annos = []
+conditions = []
+for batch in range(n_batches):
+    counts_norms.append(datasets[batch].counts_norm)
+    annos.append(datasets[batch].anno)
+    conditions.append(datasets[batch].diff_label)
+x_umap = umap_op.fit_transform(np.concatenate(counts_norms, axis = 0))
+# separate into batches
+x_umaps = []
+for batch in range(n_batches):
+    if batch == 0:
+        start_pointer = 0
+        end_pointer = start_pointer + counts_norms[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+    elif batch == (n_batches - 1):
+        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
+        x_umaps.append(x_umap[start_pointer:,:])
+    else:
+        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
+        end_pointer = start_pointer + counts_norms[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+
+save_file = result_dir
+
+utils.plot_latent(x_umaps, annos = label_annos, mode = "modality", save = save_file + "mod.png", figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+
+utils.plot_latent(x_umaps, annos = label_conditions, mode = "joint", save = save_file + "clust.png", figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+
+utils.plot_latent(x_umaps, annos = label_annos, mode = "separate", save = save_file + "sep.png", figsize = (10,35), axis_label = "Latent")
+# In[]
 m, gamma = 0.3, 0.1
 # reconstruction, mmd, cross_entropy, contrastive, group_lasso
-lambs = [1, 0.05, 10, 0.1, 0.1]
+# lambda 0. reconstruction, 1. MMD, 2. classification, 3. contrastive, 4. group lasso
+lambs = [1, 0.01, 10, 0.1, 0.1]
 k_comm = 20
 k_diff = 4
 contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
