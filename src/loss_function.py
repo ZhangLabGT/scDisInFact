@@ -24,7 +24,7 @@ def _gaussian_kernel_matrix(x, y, device):
 
 
 
-def maximum_mean_discrepancy(xs, ref_batch = 0, device = device): #Function to calculate MMD value
+def _maximum_mean_discrepancy(xs, ref_batch = 0, device = device): #Function to calculate MMD value
     nbatches = len(xs)
     # assuming batch 0 is the reference batch
     cost = 0
@@ -38,6 +38,37 @@ def maximum_mean_discrepancy(xs, ref_batch = 0, device = device): #Function to c
     # between batches
     for batch in range(1, nbatches):
         cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs[ref_batch], xs[batch], device))
+    
+    cost = torch.sqrt(cost ** 2 + 1e-9)
+    if cost.data.item()<0:
+        cost = torch.FloatTensor([0.0]).to(device)
+
+    return cost
+
+def maximum_mean_discrepancy(xs, batch_ids, ref_batch = None, device = device): #Function to calculate MMD value
+    # number of cells
+    assert batch_ids.shape[0] == xs.shape[0]
+    batches = torch.unique(batch_ids, sorted = True)
+    nbatches = batches.shape[0]
+    if ref_batch is None:
+        # select the first batch, the batches are equal sizes
+        ref_batch = batches[0]
+    # assuming batch 0 is the reference batch
+    cost = 0
+    # within batch
+    for batch in batches:
+        xs_batch = xs[batch_ids == batch, :]
+        if batch == ref_batch:
+            cost += (nbatches - 1) * torch.mean(_gaussian_kernel_matrix(xs_batch, xs_batch, device))
+        else:
+            cost += torch.mean(_gaussian_kernel_matrix(xs_batch, xs_batch, device))
+    
+    # between batches
+    xs_refbatch = xs[batch_ids == ref_batch]
+    for batch in batches:
+        if batch != ref_batch:
+            xs_batch = xs[batch_ids == batch, :]
+            cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs_refbatch, xs_batch, device))
     
     cost = torch.sqrt(cost ** 2 + 1e-9)
     if cost.data.item()<0:

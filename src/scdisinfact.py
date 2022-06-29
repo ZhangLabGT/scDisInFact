@@ -15,7 +15,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class dataset(Dataset):
 
-    def __init__(self, counts, anno, diff_label, batch_id):
+    def __init__(self, counts, anno, diff_labels, batch_id):
 
         assert not len(counts) == 0, "Count is empty"
         # normalize the count
@@ -31,7 +31,10 @@ class dataset(Dataset):
         self.anno = torch.Tensor(anno)
         self.libsizes = torch.FloatTensor(self.libsizes)
         # make sure the input time point are integer
-        self.diff_label = torch.LongTensor(diff_label)
+        self.diff_labels = []
+        # loop through all types of diff labels
+        for diff_label in diff_labels:
+            self.diff_labels.append(torch.LongTensor(diff_label))
         self.batch_id = torch.Tensor(batch_id)
 
     def __len__(self):
@@ -40,9 +43,9 @@ class dataset(Dataset):
     def __getitem__(self, idx):
         # data original data, index the index of cell, label, corresponding labels, batch, corresponding batch number
         if self.anno is not None:
-            sample = {"batch_id": self.batch_id[idx], "diff_label": self.diff_label[idx], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "libsize": self.libsizes[idx]}
+            sample = {"batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "libsize": self.libsizes[idx]}
         else:
-            sample = {"batch_id": self.batch_id[idx], "diff_label": self.diff_label[idx],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "libsize": self.libsizes[idx]}
+            sample = {"batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "libsize": self.libsizes[idx]}
         return sample
 
 
@@ -159,7 +162,7 @@ class scdisinfact_ae(nn.Module):
                     loss_gl_c += 0 # loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight)
                     zs_mmd.append(z_c)
                                 
-                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0, device = self.device)
+                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 1, device = self.device)
                 loss = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd + self.lambs[4] * loss_gl_c                
                 loss.backward()
 
@@ -234,7 +237,7 @@ class scdisinfact_ae(nn.Module):
                         loss_class_test += ce_loss(input = d_pred, target = dataset.diff_label.to(self.device))
                         loss_recon_test += loss_func.ZINB(pi = pi, theta = theta, scale_factor = dataset.libsizes.to(self.device), ridge_lambda = lamb_pi, device = self.device).loss(y_true = dataset.counts.to(self.device), y_pred = mu)
                     
-                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0, device = self.device)
+                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 1, device = self.device)
                     loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test + self.lambs[4] * (loss_gl_d_test+loss_gl_c_test)
                     # loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test
 
@@ -269,7 +272,8 @@ class scdisinfact_vae(nn.Module):
         super().__init__()
         # initialize the parameters
         self.datasets = datasets
-        self.Ks = {"common_factor": Ks[0], "diff_factor": Ks[1]}
+        self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
+        self.n_diff_types = len(self.Ks["diff_factors"])
 
         self.batch_size = batch_size
         self.interval = interval
@@ -287,11 +291,12 @@ class scdisinfact_vae(nn.Module):
         self.train_loaders = []
         # store the number of cells for each batch
         self.ncells = []
-        # store the number of unique diff labels
-        self.diff_labels = []
+        # store the number of unique diff labels [[unique label type 1], [unique label type 2], ...]
+        self.diff_labels = [[] for x in range(self.n_diff_types)]
         for batch_id, dataset in enumerate(self.datasets):
-            self.train_loaders.append(DataLoader(dataset, batch_size = self.batch_size, shuffle = True))
+            assert self.n_diff_types == len(dataset.diff_labels)
 
+            self.train_loaders.append(DataLoader(dataset, batch_size = self.batch_size, shuffle = True))
             self.ncells.append(dataset.counts.shape[0])
 
             # make sure that the genes are matched
@@ -299,40 +304,38 @@ class scdisinfact_vae(nn.Module):
                 self.ngenes = dataset.counts.shape[1]
             else:
                 assert self.ngenes == dataset.counts.shape[1]
-            # make sure that each dataset has one unique diff label
-            diff_label = [x.item() for x in torch.unique(dataset.diff_label)]
-            assert len(diff_label) == 1
-            self.diff_labels.extend(diff_label)
-        self.diff_labels = set(self.diff_labels) 
+            # each dataset can have multiple diff_labels and each diff_label can have multiple conditions
+            for idx, diff_label in enumerate(dataset.diff_labels):
+                self.diff_labels[idx].extend([x.item() for x in torch.unique(diff_label)])
+        
+        for idx in range(self.n_diff_types):
+            self.diff_labels[idx] = set(self.diff_labels[idx]) 
 
         # create model
-        # encoder for common biological factor
-        self.Enc_c = model.Encoder_var(features = [self.ngenes, 256, 64, self.Ks["common_factor"]], dropout_rate = 0, negative_slope = 0.2).to(self.device)
-        # encoder for time factor
-        self.Enc_d = model.Encoder_var(features = [self.ngenes, 256, 64, self.Ks["diff_factor"]], dropout_rate = 0, negative_slope = 0.2).to(self.device)
-        # NOTE: reconstruct the original data, use all latent dimensions as input
-        self.Dec = model.Decoder(features = [self.Ks["common_factor"] + self.Ks["diff_factor"], 64, 256, self.ngenes], dropout_rate = 0, negative_slope = 0.2).to(self.device)
+        # encoder for common biological factor, + 1 here refers to the one batch ID
+        self.Enc_c = model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["common_factor"]], dropout_rate = 0, negative_slope = 0.2).to(self.device)
+        # encoder for time factor, + 1 here refers to the one batch ID
+        self.Enc_ds = []
+        for idx in range(self.n_diff_types):
+            self.Enc_ds.append(model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["diff_factors"][idx]], dropout_rate = 0, negative_slope = 0.2).to(self.device))
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
-        # self.classifier = model.classifier(features = [self.Ks["diff_factor"], 4, len(self.diff_factor)]).to(self.device)
         # use a linear classifier as stated in the paper
-        self.classifier = nn.Linear(self.Ks["diff_factor"], len(self.diff_labels)).to(self.device)
+        self.classifiers = []
+        for idx in range(self.n_diff_types):
+            self.classifiers.append(nn.Linear(self.Ks["diff_factors"][idx], len(self.diff_labels[idx])).to(self.device))
+        # NOTE: reconstruct the original data, use all latent dimensions as input
+        self.Dec = model.Decoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), 64, 256, self.ngenes], dropout_rate = 0, negative_slope = 0.2).to(self.device)
+        
         # parameter when training the common biological factor
-        self.param_common = [
-            {'params': self.Enc_c.parameters()},
-            {'params': self.Dec.parameters()}            
-        ]
-
+        self.param_common = nn.ModuleDict({"encoder_common": self.Enc_c, "decoder": self.Dec})
         # parameter when training the time factor
-        self.param_diff = [
-            {'params': self.Enc_d.parameters()},
-            {'params': self.classifier.parameters()}            
-        ]
+        self.param_diff = nn.ModuleDict({"encoder_diff": nn.ModuleList(self.Enc_ds), "classifier": nn.ModuleList(self.classifiers)})
 
         # declare optimizer for time factor and common biological factor separately
-        self.opt_common = opt.Adam(self.param_common, lr = self.lr)
-        self.opt_diff = opt.Adam(self.param_diff, lr = self.lr)
-
-
+        self.opt = opt.Adam(
+            [{'params': self.param_common.parameters()}, 
+            {'params': self.param_diff.parameters()}], lr = self.lr
+        )
 
     def reparametrize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
@@ -340,7 +343,10 @@ class scdisinfact_vae(nn.Module):
         eps = torch.FloatTensor(std.size()).normal_().to(self.device)
         eps = Variable(eps)
         return eps.mul(std).add_(mu)
-            
+
+    def total_correlation(self):
+        pass
+
     def train(self, nepochs = 50):
         lamb_pi = 1e-5
         # TODO: in the vanilla vae, beta should be 1, in beta-vae, beta >1, the visualization for both cases are not good. Try beta with smaller value
@@ -353,91 +359,135 @@ class scdisinfact_vae(nn.Module):
         loss_class_tests = []
         loss_gl_d_tests = []
         loss_gl_c_tests = []
+        loss_contr_tests = []
 
         for epoch in range(nepochs + 1):
             for data_batch in zip(*self.train_loaders):
+                # 1. train on common factor
                 loss_recon = 0
                 loss_kl = 0
-                loss_contr = 0
-                loss_gl_d = 0
                 loss_gl_c = 0
-
-                zs_contr = {}
-                zs_contr['diff_label'] = []
-                zs_contr['x'] = []
-                zs_mmd = []
-                # 1. train on common factor
+                zc_mmd = {"x":[], "batch_id": []}
                 for batch_id, x in enumerate(data_batch):
-                    z_mu_c, z_log_var_c = self.Enc_c(x["count_stand"].to(self.device))
-                    # freeze the gradient of Enc_t and classifier
-                    # NOTE: use torch no_grad, set requires_grad to False alternatively
-                    with torch.no_grad():
-                        z_mu_d, z_log_var_d = self.Enc_d(x["count_stand"].to(self.device))
-                    z_mu = torch.concat((z_mu_c, z_mu_d), dim = 1)
-                    z_log_var = torch.concat((z_log_var_c, z_log_var_d), dim = 1)
-                    z = self.reparametrize(z_mu, z_log_var)
-                    mu, pi, theta = self.Dec(z)
+                    # concatenate the batch ID with gene expression data as the input
+                    z_mu_c, z_log_var_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                    # sampling
+                    z_c = self.reparametrize(z_mu_c, z_log_var_c)
+                    # calculate kl divergence
+                    loss_kl += torch.sum(z_mu_c.pow(2).add_(z_log_var_c.exp()).mul_(-1).add_(1).add_(z_log_var_c)).mul_(-0.5)     
+                    # NOTE: an alternative is to use z after sample
+                    zc_mmd["x"].append(z_mu_c)                        
+                    zc_mmd["batch_id"].append(x["batch_id"])
 
+                    # freeze the gradient of Enc_t and classifier
+                    with torch.no_grad():
+                        z_ds = []
+                        # loop through the encoder for each condition type
+                        for Enc_d in self.Enc_ds:
+                            z_mu_d, z_log_var_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                            # sampling
+                            z_d = self.reparametrize(z_mu_d, z_log_var_d)
+                            z_ds.append(z_d)
+                    
+                    mu, pi, theta = self.Dec(torch.concat([z_c] + z_ds, dim = 1))
+
+                    # calculate the reconstruction loss
                     loss_recon += loss_func.ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(self.device), ridge_lambda = lamb_pi).loss(y_true = x["count"].to(self.device), y_pred = mu)
-                    # kl-divergence
-                    loss_kl += torch.sum(z_mu.pow(2).add_(z_log_var.exp()).mul_(-1).add_(1).add_(z_log_var)).mul_(-0.5)
                     # NOTE: calculate the group lasso for common encoder, we corrently don't need to use group lasso
                     loss_gl_c += 0 # loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight)
-                    zs_mmd.append(z_mu_c)
-                    
-                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0, device = self.device)
-                # beta = 1 for VAE, beta > 1 for beta-vae
+                
+                # calculate global mmd loss
+                zc_mmd["x"] = torch.cat(zc_mmd["x"], dim = 0)
+                zc_mmd["batch_id"] = torch.cat(zc_mmd["batch_id"], dim = 0)    
+                loss_mmd = loss_func.maximum_mean_discrepancy(xs = zc_mmd["x"], batch_ids = zc_mmd["batch_id"], device = self.device)
+                # total loss
                 loss = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd + self.lambs[5] * loss_kl + self.lambs[4] * loss_gl_c
                 loss.backward()
 
-                # NOTE: check the gradient of Enc_t and classifier to be None or 0
+                # check the gradient of Enc_t and classifier to be None or 0
                 with torch.no_grad():
-                    for x in self.Enc_d.parameters():
-                        assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
-                    for x in self.classifier.parameters():
-                        assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
+                    for Enc_d in self.Enc_ds:
+                        for x in Enc_d.parameters():
+                            assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
+                    for classifier in self.classifiers:
+                        for x in classifier.parameters():
+                            assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
                         # assert torch.sum(x.grad.data.abs()) < 1e-6
                     for x in self.Enc_c.parameters():
                         assert torch.sum(x.grad.data.abs()) != 0
                     for x in self.Dec.parameters():
                         assert torch.sum(x.grad.data.abs()) != 0
                      
-
-                self.opt_common.step()
-                self.opt_common.zero_grad()
-
+                self.opt.step()
+                self.opt.zero_grad()
+                
+                # 2. train on diff factor
                 loss_class = 0
                 loss_kl = 0
-                # 2. train on diff factor
+                loss_mmd = 0
+                loss_gl_d = 0
+                loss_contr = 0
+
+                zs_contr = []
+                zd_mmd = []
+                for condi in range(self.n_diff_types):
+                    zs_contr.append({"diff_label": [], "x": []})
+                    zd_mmd.append({"diff_label": [], "x": [], "batch_id": []})
+
                 for batch_id, x in enumerate(data_batch):
                     # freeze the gradient of Enc_c
                     with torch.no_grad():
-                        z_mu_c, z_log_var_c = self.Enc_c(x["count_stand"].to(self.device))
-                    z_mu_d, z_log_var_d = self.Enc_d(x["count_stand"].to(self.device))
+                        z_mu_c, z_log_var_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
 
-                    # TODO: should we still sample?? Here I sample again, and then we need to calculate kl loss for the samples
-                    z_d = self.reparametrize(z_mu_d, z_log_var_d)
-                    zs_contr['x'].append(z_d)
-                    zs_contr['diff_label'].append(x["diff_label"])
-                    d_pred = self.classifier(z_d)
-                    # calculate the group lasso for diff encoder        
-                    loss_gl_d += loss_func.grouplasso(self.Enc_d.fc.fc_layers[0].linear.weight)
-                    # calculate the cross-entropy loss
-                    loss_class += ce_loss(input = d_pred, target = x["diff_label"].to(self.device))
-                    # TODO: calculate kl divergence with prior distribution
-                    loss_kl += torch.sum(z_mu_d.pow(2).add_(z_log_var_d.exp()).mul_(-1).add_(1).add_(z_log_var_d)).mul_(-0.5)
+                    # loop through the diff encoder for each condition types
+                    for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
+                        z_mu_d, z_log_var_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                        # sample the latent space for each diff encoder
+                        z_d = self.reparametrize(z_mu_d, z_log_var_d)
 
-                # TODO: contrastive loss, note that the same data batch have cells from only one cluster, contrastive loss should be added jointly
-                loss_contr = self.contr(torch.cat(zs_contr['x']), torch.cat(zs_contr['diff_label']))                
-                loss = self.lambs[2] * loss_class + self.lambs[5] * loss_kl + self.lambs[3] * loss_contr + self.lambs[4] * loss_gl_d
+                        zs_contr[condi]["x"].append(z_d)
+                        zs_contr[condi]["diff_label"].append(x["diff_labels"][condi])
+                        # NOTE: an alternative is to use z after sample
+                        zd_mmd[condi]["x"].append(z_mu_d)
+                        zd_mmd[condi]["diff_label"].append(x["diff_labels"][condi])
+                        zd_mmd[condi]["batch_id"].append(x["batch_id"])
+
+                        # make prediction
+                        d_pred = classifier(z_d)
+                        # calculate the cross-entropy loss
+                        loss_class += ce_loss(input = d_pred, target = x["diff_labels"][condi].to(self.device))
+                        # calculate the group lasso for each diff encoder     
+                        loss_gl_d += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight)
+                        # calculate kl divergence with prior distribution
+                        loss_kl += torch.sum(z_mu_d.pow(2).add_(z_log_var_d.exp()).mul_(-1).add_(1).add_(z_log_var_d)).mul_(-0.5)
+
+
+                # contrastive loss, note that the same data batch have cells from only one cluster, contrastive loss should be added jointly
+                for condi in range(self.n_diff_types):
+                    # contrastive loss, loop through all condition types
+                    zs_contr[condi]["x"] = torch.cat(zs_contr[condi]["x"], dim = 0)
+                    zs_contr[condi]["diff_label"] = torch.cat(zs_contr[condi]["diff_label"], dim = 0)
+                    loss_contr += self.contr(zs_contr[condi]["x"], zs_contr[condi]["diff_label"])  
+
+                    # condition specific mmd loss
+                    zd_mmd[condi]["x"] = torch.cat(zd_mmd[condi]["x"], dim = 0)
+                    zd_mmd[condi]["diff_label"] = torch.cat(zd_mmd[condi]["diff_label"], dim = 0)
+                    zd_mmd[condi]["batch_id"] = torch.cat(zd_mmd[condi]["batch_id"], dim = 0)
+                    for diff_label in range(self.n_diff_types):
+                        idx = zd_mmd[condi]["diff_label"] == diff_label
+                        loss_mmd += loss_func.maximum_mean_discrepancy(xs = zd_mmd[condi]['x'][idx, :], batch_ids = zd_mmd[condi]['batch_id'][idx], device = self.device)
+
+                loss = self.lambs[1] * loss_mmd + self.lambs[2] * loss_class + self.lambs[5] * loss_kl + self.lambs[3] * loss_contr + self.lambs[4] * loss_gl_d
                 loss.backward()
 
-                # NOTE: check the gradient of Enc_c and Dec to be 0 or None
+                # check the gradient of Enc_c and Dec to be 0 or None
                 with torch.no_grad():
-                    for x in self.Enc_d.parameters():
-                        assert torch.sum(x.grad.data.abs()) != 0
-                    for x in self.classifier.parameters():
-                        assert torch.sum(x.grad.data.abs()) != 0
+                    for Enc_d in self.Enc_ds:
+                        for x in Enc_d.parameters():
+                            assert torch.sum(x.grad.data.abs()) != 0
+                    for classifier in self.classifiers:
+                        for x in classifier.parameters():
+                            assert torch.sum(x.grad.data.abs()) != 0
                     for x in self.Enc_c.parameters():
                         assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
                         # assert torch.sum(x.grad.data.abs()) < 1e-6
@@ -445,8 +495,8 @@ class scdisinfact_vae(nn.Module):
                         assert (x.grad is None) or (torch.sum(x.grad.data.abs()) == 0)
                         # assert torch.sum(x.grad.data.abs()) < 1e-6
 
-                self.opt_diff.step()
-                self.opt_diff.zero_grad()
+                self.opt.step()
+                self.opt.zero_grad()
             
             # TEST:
             if epoch % self.interval == 0:
@@ -456,30 +506,73 @@ class scdisinfact_vae(nn.Module):
                 loss_gl_c_test = 0
                 loss_gl_d_test = 0
                 loss_kl_test = 0
-                
-                zs_mmd = []
+                loss_contr_test = 0
+
+                zc_mmd = {"x":[], "batch_id":[]}
+                zd_mmd = []
+                zs_contr = []
+                for condi in range(self.n_diff_types):
+                    zs_contr.append({"diff_label": [], "x": []})
+                    zd_mmd.append({"diff_label": [], "x": [], "batch_id": []})
+
                 with torch.no_grad():
-                    for dataset in self.datasets:
-                        z_mu_c, z_log_var_c = self.Enc_c(dataset.counts_stand.to(self.device))
-                        z_mu_d, z_log_var_d = self.Enc_d(dataset.counts_stand.to(self.device))
+                    # use the whole dataset for validation
+                    for batch_id, dataset in enumerate(self.datasets):
+                        # common encoder
+                        z_mu_c, z_log_var_c = self.Enc_c(torch.concat([dataset.counts_stand, torch.FloatTensor([[batch_id]]).expand(dataset.counts_stand.shape[0], 1)], dim = 1).to(self.device))
+                        # sampling
+                        z_c = self.reparametrize(z_mu_c, z_log_var_c)
+                        # calculate kl divergence
+                        loss_kl_test += torch.sum(z_mu_c.pow(2).add_(z_log_var_c.exp()).mul_(-1).add_(1).add_(z_log_var_c)).mul_(-0.5)     
+                        # NOTE: an alternative is to use z after sample
+                        zc_mmd["x"].append(z_mu_c)                        
+                        zc_mmd["batch_id"].append(dataset.batch_id)
+                        # diff encoder
+                        z_ds = []
+                        for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
+                            # loop through all condition types, and conduct sampling
+                            z_mu_d, z_log_var_d = Enc_d(torch.concat([dataset.counts_stand, torch.FloatTensor([[batch_id]]).expand(dataset.counts_stand.shape[0], 1)], dim = 1).to(self.device))
+                            z_d = self.reparametrize(z_mu_d, z_log_var_d)
+                            z_ds.append(z_d)
+                            
+                            zs_contr[condi]['x'].append(z_d)
+                            zs_contr[condi]['diff_label'].append(dataset.diff_labels[condi])
+                            # NOTE: an alternative is to use z after sample
+                            zd_mmd[condi]["x"].append(z_mu_d)
+                            zd_mmd[condi]["diff_label"].append(dataset.diff_labels[condi])
+                            zd_mmd[condi]["batch_id"].append(dataset.batch_id)
 
-                        z_mu = torch.concat((z_mu_c, z_mu_d), dim = 1)
-                        z_log_var = torch.concat((z_log_var_c, z_log_var_d), dim = 1)
-                        z = self.reparametrize(z_mu, z_log_var)
-                        mu, pi, theta = self.Dec(z)
-                        # z_t
-                        d_pred = self.classifier(z[:, -z_mu_d.shape[1]:])
-                        # TODO: here I use mu before sample, an alternative is to use z after sample
-                        zs_mmd.append(z_mu_c)
+                            # make prediction for current condition type
+                            d_pred = classifier(z_d)
+                            # calculate cross entropy loss
+                            loss_class_test += ce_loss(input = d_pred, target = dataset.diff_labels[condi].to(self.device))
+                            # calculate group lasso
+                            loss_gl_d_test += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight, alpha = 1e-2)
+                            # calculate the kl divergence
+                            loss_kl_test += torch.sum(z_mu_d.pow(2).add_(z_log_var_d.exp()).mul_(-1).add_(1).add_(z_log_var_d)).mul_(-0.5)                        
 
+                        mu, pi, theta = self.Dec(torch.concat([z_c] + z_ds, dim = 1))
+                        
                         loss_gl_c_test += loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight, alpha = 1e-2)
-                        loss_gl_d_test += loss_func.grouplasso(self.Enc_d.fc.fc_layers[0].linear.weight, alpha = 1e-2)
-                        loss_class_test += ce_loss(input = d_pred, target = dataset.diff_label.to(self.device))
                         loss_recon_test += loss_func.ZINB(pi = pi, theta = theta, scale_factor = dataset.libsizes.to(self.device), ridge_lambda = lamb_pi).loss(y_true = dataset.counts.to(self.device), y_pred = mu)
-                        loss_kl_test += torch.sum(z_mu.pow(2).add_(z_log_var.exp()).mul_(-1).add_(1).add_(z_log_var)).mul_(-0.5)
 
-                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zs_mmd, ref_batch = 0)
-                    loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test + self.lambs[4] * (loss_gl_d_test+loss_gl_c_test) + self.lambs[5] * loss_kl_test
+                    zc_mmd["x"] = torch.cat(zc_mmd["x"], dim = 0)
+                    zc_mmd["batch_id"] = torch.cat(zc_mmd["batch_id"], dim = 0)
+                    loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = zc_mmd["x"], batch_ids = zc_mmd["batch_id"])
+                    
+                    for condi in range(self.n_diff_types):
+                        # contrastive loss, loop through all condition types
+                        loss_contr_test += self.contr(torch.cat(zs_contr[condi]['x']), torch.cat(zs_contr[condi]['diff_label']))  
+                        # condition specific mmd loss
+                        zd_mmd[condi]["x"] = torch.cat(zd_mmd[condi]["x"], dim = 0)
+                        zd_mmd[condi]["diff_label"] = torch.cat(zd_mmd[condi]["diff_label"], dim = 0)
+                        zd_mmd[condi]["batch_id"] = torch.cat(zd_mmd[condi]["batch_id"], dim = 0)
+                        for diff_label in range(self.n_diff_types):
+                            idx = zd_mmd[condi]["diff_label"] == diff_label
+                            loss_mmd += loss_func.maximum_mean_discrepancy(xs = zd_mmd[condi]['x'][idx, :], batch_ids = zd_mmd[condi]['batch_id'][idx], device = self.device)
+
+                    # total loss
+                    loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test + self.lambs[3] * loss_contr + self.lambs[4] * (loss_gl_d_test+loss_gl_c_test) + self.lambs[5] * loss_kl_test
                     
                     print('Epoch {}, Validating Loss: {:.4f}'.format(epoch, loss_test.item()))
                     info = [
@@ -487,6 +580,7 @@ class scdisinfact_vae(nn.Module):
                         'loss kl: {:.5f}'.format(loss_kl_test.item()),
                         'loss mmd: {:.5f}'.format(loss_mmd_test.item()),
                         'loss classification: {:.5f}'.format(loss_class_test.item()),
+                        'loss contrastive: {:.5f}'.format(loss_contr_test.item()),
                         'loss group lasso common: {:.5f}'.format(loss_gl_c_test.item()), 
                         'loss group lasso diff: {:.5f}'.format(loss_gl_d_test.item()), 
                     ]
@@ -497,6 +591,7 @@ class scdisinfact_vae(nn.Module):
                     loss_recon_tests.append(loss_recon.item())
                     loss_mmd_tests.append(loss_mmd_test.item())
                     loss_class_tests.append(loss_class_test.item())
+                    loss_contr_tests.append(loss_contr_test.item())
                     loss_kl_tests.append(loss_kl_test.item())
                     loss_gl_d_tests.append(loss_gl_d_test.item())
                     loss_gl_c_tests.append(loss_gl_c_test.item())

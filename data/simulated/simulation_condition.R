@@ -2,7 +2,6 @@
 # devtools::install_github('YosefLab/SymSim')
 library("SymSim")
 
-# setwd("/Users/ziqizhang/Documents/xsede/scDIG/data/simulator")
 # Simulate multiple discrete populations
 # When there are multiple populations, users need to provide a tree. A tree with five leaves (five populations) can be generated as follows:
 phyla1 <- Phyla3()
@@ -10,7 +9,7 @@ phyla1 <- Phyla3()
 ngenes <- 500
 ncells_total <- 10000
 min_popsize <- 1000
-Sigma <- 0.1
+Sigma <- 0.4
 nbatch <- 6
 diff <- 2
 n_diff_genes <- 20
@@ -66,6 +65,19 @@ counts_batch3[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch3[(n_diff_
 counts_batch4[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch4[(n_diff_genes+1):(2*n_diff_genes),], 0)
 counts_batch5[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch5[(n_diff_genes+1):(2*n_diff_genes),], 0)
 counts_batch6[(n_diff_genes+1):(2*n_diff_genes),] <- pmax(counts_batch6[(n_diff_genes+1):(2*n_diff_genes),], 0)
+
+# second set of conditions: batch 1, 3, 5 and batch 2, 4, 6
+# assume 20 genes growing and 20 genes reducing
+counts_batch2[(2*n_diff_genes + 1):(3*n_diff_genes),] <- counts_batch2[(2*n_diff_genes + 1):(3*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch2)[2], min = 0, max = diff), n_diff_genes, dim(counts_batch2)[2])
+counts_batch4[(2*n_diff_genes + 1):(3*n_diff_genes),] <- counts_batch4[(2*n_diff_genes + 1):(3*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch4)[2], min = 0, max = diff), n_diff_genes, dim(counts_batch4)[2])
+counts_batch6[(2*n_diff_genes + 1):(3*n_diff_genes),] <- counts_batch6[(2*n_diff_genes + 1):(3*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch6)[2], min = 0, max = diff), n_diff_genes, dim(counts_batch6)[2])
+counts_batch2[(3*n_diff_genes + 1):(4*n_diff_genes),] <- counts_batch2[(3*n_diff_genes + 1):(4*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch2)[2], min = -0.5*diff, max = 0), n_diff_genes, dim(counts_batch2)[2])
+counts_batch4[(3*n_diff_genes + 1):(4*n_diff_genes),] <- counts_batch4[(3*n_diff_genes + 1):(4*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch4)[2], min = -0.5*diff, max = 0), n_diff_genes, dim(counts_batch4)[2])
+counts_batch6[(3*n_diff_genes + 1):(4*n_diff_genes),] <- counts_batch6[(3*n_diff_genes + 1):(4*n_diff_genes),] + matrix(runif(n_diff_genes * dim(counts_batch6)[2], min = -0.5*diff, max = 0), n_diff_genes, dim(counts_batch6)[2])
+# make sure all nonnegative
+counts_batch2[(3*n_diff_genes + 1):(4*n_diff_genes),] <- pmax(counts_batch2[(3*n_diff_genes + 1):(4*n_diff_genes),], 0)
+counts_batch4[(3*n_diff_genes + 1):(4*n_diff_genes),] <- pmax(counts_batch4[(3*n_diff_genes + 1):(4*n_diff_genes),], 0)
+counts_batch6[(3*n_diff_genes + 1):(4*n_diff_genes),] <- pmax(counts_batch6[(3*n_diff_genes + 1):(4*n_diff_genes),], 0)
 
 
 datapath <- paste0("dataset_", ncells_total, "_", ngenes, "_", Sigma, "_", n_diff_genes, "_", diff)
