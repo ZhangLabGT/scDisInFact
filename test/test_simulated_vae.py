@@ -175,8 +175,8 @@ for batch_id in batch_list:
 import importlib 
 importlib.reload(scdisinfact)
 m, gamma = 0.3, 0.1
-# reconstruction, mmd, cross_entropy, contrastive, group_lasso, kl divergence
-lambs = [1, 0.5, 1, 0.0, 0.0, 1e-5]
+# reconstruction, mmd, cross_entropy, contrastive, group_lasso, kl divergence, total correlation
+lambs = [1, 0.5, 1, 0.0, 0.0, 1e-5, 0]
 contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
 # contr_loss = SupervisedContrastiveLoss()
 model1 = scdisinfact.scdisinfact_vae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
@@ -256,12 +256,12 @@ comment = r'circle_{}_{}_{}_'.format(m, gamma, lambs[-1])
 
 utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = label_conditions1, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_conditions2, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_conditions1, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
 
 # utils.plot_latent(zs = zs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 # utils.plot_latent(zs = zs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)

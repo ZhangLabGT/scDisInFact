@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
+from torch.autograd import Variable
 from zinb import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -226,3 +227,98 @@ def grouplasso(W, alpha = 1e-4):
     # group lasso + smoothing term
     loss_gl = torch.sum((l2_norm >= alpha) * l2_norm + (l2_norm < alpha) * (W.pow(2).sum(dim=0).add(1e-8)/(2*alpha + 1e-8) + alpha/2))
     return loss_gl
+
+def estimate_entropies(qz_samples, mus, logvars, device):
+    """Computes the term:
+        E_{p(x)} E_{q(z|x)} [-log q(z)]
+    where q(z) = 1/N sum_n=1^N q(z|x_n).
+    Assumes samples are from q(z|x) for *all* x in the dataset.
+
+    Then we can estimate numerically stable negative log likelihood:
+        - log q(z) = log N - \log\sum_n=1^N\exp log q(z|x_n)
+
+    Inputs:
+    -------
+        qz_samples (K, S) Variable
+        qz_params  (N, K, nparams) Variable
+    """
+
+    # qz_samples of the shape (K, S), where K is the sample dimension, S is the total number of samples 
+    # select 10000 samples from S 
+    qz_samples = qz_samples.index_select(1, Variable(torch.randperm(qz_samples.shape[1])[:10000].to(device)))
+    # K is the latent dimensions, S is the number of samples (maximum 10000)
+    K, S = qz_samples.shape
+    # N is the total number of samples
+    N, _ = mus.shape
+    assert(K == mus.shape[1])
+    assert(K == logvars.shape[1])
+    assert(N == logvars.shape[0])
+
+    # 1 dimension for the whole z
+    joint_entropy = torch.FloatTensor([0]).to(device)
+
+    k = 0
+    # loop through every sample in the batch with batch_size as stepsize
+    while k < S:
+        # batchsize is 10
+        batch_size = min(10, S - k)
+        # logqz_i of the shape (N, K, 10), which calculate the log distribution of each dimension separately
+        # actually calculate logq(z_m[i]|x_j), m is the mth sample, j is the jth sample, and i is the ith dimension
+        logqz_i = log_gaussian(
+            # select qz_samples (N, K, 10), 10 is the batch size (total S)
+            qz_samples.view(1, K, S).expand(N, K, S)[:, :, k:k + batch_size],
+            # mu (N, K, 10), 10 is the batch size (total S)
+            mus.view(N, K, 1).expand(N, K, S)[:, :, k:k + batch_size], 
+            # logvar (N, K, 10), 10 is the batch size (total S)
+            logvars.view(N, K, 1).expand(N, K, S)[:, :, k:k + batch_size]
+            )
+        k += batch_size
+
+        # logqz of the shape: (N, 10) (sum over K)
+        logqz = logqz_i.sum(1)  
+        # first logsumexp calculate \log \sum_{j=1}^Nq(z_i|x_j)
+        # then calculate \log N - \log \sum_{j=1}^Nq(z_i|x_j)
+        # finally sum over i \sum_{i=1}^S [\log N - \log \sum_{j=1}^Nq(z_i|x_j)]
+        joint_entropy += (np.log(N) - logsumexp(logqz, dim=0, keepdim=False).data).sum(0)
+
+    # calculate the average: E_{p(x)} E_{q(z|x)} [-log q(z)]
+    joint_entropy /= S
+
+    return joint_entropy
+
+
+def logsumexp(value, dim=None, keepdim=False):
+    """Numerically stable implementation of the operation
+
+    value.exp().sum(dim, keepdim).log()
+    """
+    if dim is not None:
+        m, _ = torch.max(value, dim=dim, keepdim=True)
+        value0 = value - m
+        if keepdim is False:
+            m = m.squeeze(dim)
+        return m + torch.log(torch.sum(torch.exp(value0), dim=dim, keepdim=keepdim))
+    else:
+        m = torch.max(value)
+        sum_exp = torch.sum(torch.exp(value - m))
+        if torch.is_tensor(sum_exp):
+            return m + torch.log(sum_exp)
+        else:
+            return m + np.log(sum_exp)
+
+def _log_gaussian(sample, mu, logvar, device):
+    """
+    calculate the log likelihood of Gaussian distribution
+    """
+    # inv_sigma = 1/exp(logvar)
+    inv_sigma = torch.exp(-logvar)
+    loglkl = -0.5 * (np.log(2 * np.pi) + 2 * logvar + (sample - mu) * (sample - mu) * inv_sigma * inv_sigma)
+    return loglkl
+
+def log_gaussian(sample, mu, logvar, device):
+    mu = mu.type_as(sample)
+    logvar = logvar.type_as(sample)
+    c = Variable(torch.Tensor([np.log(2 * np.pi)])).type_as(sample.data)
+    inv_sigma = torch.exp(-logvar)
+    tmp = (sample - mu) * inv_sigma
+    return -0.5 * (tmp * tmp + 2 * logvar + c)
