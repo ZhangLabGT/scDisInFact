@@ -174,12 +174,12 @@ for batch_id in batch_list:
 # In[] training the model
 import importlib 
 importlib.reload(scdisinfact)
-m, gamma = 0.3, 0.1
+m, gamma = 0.3, 10
 # reconstruction, mmd, cross_entropy, contrastive, group_lasso, kl divergence, total correlation
-lambs = [1, 0.5, 1, 0.0, 0.0, 1e-5, 10]
+lambs = [1, 0.01, 1.0, 0.0, 0, 1e-5, 0.1]
 contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
 # contr_loss = SupervisedContrastiveLoss()
-model1 = scdisinfact.scdisinfact_factorvae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
+model1 = scdisinfact.scdisinfact(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
 losses = model1.train(nepochs = 100)
 # torch.save(model1.state_dict(), result_dir + "model.pth")
 # model1.load_state_dict(torch.load(result_dir + "model.pth"))
