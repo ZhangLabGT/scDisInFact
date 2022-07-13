@@ -1339,9 +1339,9 @@ class scdisinfact(nn.Module):
                 loss_kl = 0
                 loss_gl_c = 0
                 z_cs = {"z_mu":[], "z_logvar":[], "z": [], "batch_id": []}
-                for batch_id, x in enumerate(data_batch):
+                for x in data_batch:
                     # concatenate the batch ID with gene expression data as the input
-                    z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                    z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                     # sampling
                     z_c = self.reparametrize(z_mu_c, z_logvar_c)
                     # calculate kl divergence
@@ -1357,7 +1357,7 @@ class scdisinfact(nn.Module):
                         z_logvar_d = []
                         # loop through the encoder for each condition type
                         for Enc_d in self.Enc_ds:
-                            _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                            _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                             # sampling
                             _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
                             z_d.append(_z_d)
@@ -1390,16 +1390,16 @@ class scdisinfact(nn.Module):
                 for condi in range(self.n_diff_types):
                     z_ds.append({"diff_label": [], "z_mu":[], "z_logvar":[], "z": [], "batch_id": []})
 
-                for batch_id, x in enumerate(data_batch):
+                for x in data_batch:
                     # freeze the gradient of Enc_c
                     with torch.no_grad():
-                        z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                        z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                         # sampling
                         z_c = self.reparametrize(z_mu_c, z_logvar_c)
 
                     # loop through the diff encoder for each condition types
                     for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
-                        _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                        _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                         # sample the latent space for each diff encoder
                         _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
 
@@ -1421,12 +1421,12 @@ class scdisinfact(nn.Module):
 
                     # NOTE: calculate the total correlation, use discriminator
                     # create original samples
-                    orig_samples = torch.cat([z_c, torch.cat([x["z"][batch_id] for x in z_ds], dim = 1)], dim = 1)
+                    orig_samples = torch.cat([z_c, torch.cat([x["z"][-1] for x in z_ds], dim = 1)], dim = 1)
                     # create permuted samples
                     perm_idx = []
                     for condi in range(self.n_diff_types):
                         perm_idx.append(torch.randperm(n = orig_samples.shape[0]))
-                    perm_samples = torch.cat([z_c, torch.cat([x["z"][batch_id][perm_idx[i], :] for i, x in enumerate(z_ds)], dim = 1)], dim = 1)
+                    perm_samples = torch.cat([z_c, torch.cat([x["z"][-1][perm_idx[i], :] for i, x in enumerate(z_ds)], dim = 1)], dim = 1)
                     # not updating the discriminator
                     for x in self.disc.parameters():
                         x.requires_grad = False
@@ -1460,15 +1460,15 @@ class scdisinfact(nn.Module):
                 for x in self.disc.parameters():
                     x.requires_grad = True
                 
-                for batch_id, x in enumerate(data_batch):
+                for x in data_batch:
                     # freeze the gradient of Enc_c
                     with torch.no_grad():
-                        z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                        z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                         z_c = self.reparametrize(z_mu_c, z_logvar_c)
                         z_d = []
                         # loop through the diff encoder for each condition types
                         for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
-                            _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                            _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                             _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
                             z_d.append(_z_d)
                 
@@ -1509,9 +1509,9 @@ class scdisinfact(nn.Module):
                 with torch.no_grad():
                     # use the whole dataset for validation
                     for data_batch in zip(*self.test_loaders):
-                        for batch_id, x in enumerate(data_batch):
+                        for x in data_batch:
                             # common encoder
-                            z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                            z_mu_c, z_logvar_c = self.Enc_c(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                             # sampling
                             z_c = self.reparametrize(z_mu_c, z_logvar_c)
                             # calculate kl divergence
@@ -1526,7 +1526,7 @@ class scdisinfact(nn.Module):
                             z_d = []
                             for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
                                 # loop through all condition types, and conduct sampling
-                                z_mu_d, z_logvar_d = Enc_d(torch.concat([x["count_stand"], torch.FloatTensor([[batch_id]]).expand(x["count_stand"].shape[0], 1)], dim = 1).to(self.device))
+                                z_mu_d, z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                                 _z_d = self.reparametrize(z_mu_d, z_logvar_d)
                                 z_d.append(_z_d)
                                 

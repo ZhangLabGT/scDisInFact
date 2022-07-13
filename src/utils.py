@@ -202,7 +202,8 @@ def plot_train(all_loss, type=None, batches=None):
 # newly added functions
 #######################################################################
 
-def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10), axis_label = "Latent", title = None,**kwargs):
+from adjustText import adjust_text
+def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10), axis_label = "Latent", label_inplace = False, **kwargs):
     """\
     Description
         Plot latent space
@@ -227,6 +228,8 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         "s": 10,
         "alpha": 0.9,
         "markerscale": 1,
+        "text_size": "xx-large",
+        "colormap": "tab20b"
     }
     _kwargs.update(kwargs)
 
@@ -236,8 +239,8 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         ax = fig.add_subplot()
         
         for batch in range(len(zs)):
-            ax.scatter(zs[batch][:,0], zs[batch][:,1], color = colormap(batch), label = "batch " + str(batch), s = _kwargs["s"], alpha = _kwargs["alpha"])
-        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+            ax.scatter(zs[batch][:,0], zs[batch][:,1], color = colormap(batch), label = "batch " + str(batch + 1), s = _kwargs["s"], alpha = _kwargs["alpha"])
+        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(zs) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
         ax.tick_params(axis = "both", which = "major", labelsize = 15)
 
         ax.set_xlabel(axis_label + " 1", fontsize = 19)
@@ -250,16 +253,21 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         cluster_types = set()
         for batch in range(len(zs)):
             cluster_types = cluster_types.union(set([x for x in np.unique(annos[batch])]))
-        colormap = plt.cm.get_cmap("tab20", len(cluster_types))
+        colormap = plt.cm.get_cmap(_kwargs["colormap"], len(cluster_types))
         cluster_types = sorted(list(cluster_types))
+        
+        texts = []
         for i, cluster_type in enumerate(cluster_types):
             z_clust = []
             for batch in range(len(zs)):
                 index = np.where(annos[batch] == cluster_type)[0]
                 z_clust.append(zs[batch][index,:])
             ax.scatter(np.concatenate(z_clust, axis = 0)[:,0], np.concatenate(z_clust, axis = 0)[:,1], color = colormap(i), label = cluster_type, s = _kwargs["s"], alpha = _kwargs["alpha"])
+            # text on plot
+            if label_inplace:
+                texts.append(ax.text(np.median(np.concatenate(z_clust, axis = 0)[:,0]), np.median(np.concatenate(z_clust, axis = 0)[:,1]), color = "black", s = cluster_types[i], fontsize = _kwargs["text_size"], weight = 'semibold', in_layout = True))
         
-        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(cluster_types) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
         
         ax.tick_params(axis = "both", which = "major", labelsize = 15)
 
@@ -267,7 +275,9 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         ax.set_ylabel(axis_label + " 2", fontsize = 19)
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)  
-
+        # adjust position
+        if label_inplace:
+            adjust_text(texts, only_move={'points':'xy', 'texts':'xy'})
 
     elif mode == "separate":
         axs = fig.subplots(len(zs),1)
@@ -275,27 +285,37 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         for batch in range(len(zs)):
             cluster_types = cluster_types.union(set([x for x in np.unique(annos[batch])]))
         cluster_types = sorted(list(cluster_types))
-        colormap = plt.cm.get_cmap("tab20", len(cluster_types))
+        colormap = plt.cm.get_cmap(_kwargs["colormap"], len(cluster_types))
 
 
         for batch in range(len(zs)):
             z_clust = []
+            texts = []
             for i, cluster_type in enumerate(cluster_types):
                 index = np.where(annos[batch] == cluster_type)[0]
                 axs[batch].scatter(zs[batch][index,0], zs[batch][index,1], color = colormap(i), label = cluster_type, s = _kwargs["s"], alpha = _kwargs["alpha"])
+                # text on plot
+                if label_inplace:
+                    # if exist cells
+                    if zs[batch][index,0].shape[0] > 0:
+                        texts.append(axs[batch].text(np.median(zs[batch][index,0]), np.median(zs[batch][index,1]), color = "black", s = cluster_types[i], fontsize = _kwargs["text_size"], weight = 'semibold', in_layout = True))
             
-            axs[batch].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(0.94, 1), markerscale = _kwargs["markerscale"])
+            axs[batch].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(cluster_types) // 15) + 1, bbox_to_anchor=(0.94, 1), markerscale = _kwargs["markerscale"])
             axs[batch].set_title("batch " + str(batch + 1), fontsize = 25)
 
             axs[batch].tick_params(axis = "both", which = "major", labelsize = 15)
 
             axs[batch].set_xlabel(axis_label + " 1", fontsize = 19)
             axs[batch].set_ylabel(axis_label + " 2", fontsize = 19)
-            # axs[batch].set_xlim(np.min(np.concatenate((z1[:,0], z2[:,0]))), np.max(np.concatenate((z1[:,0], z2[:,0]))))
-            # axs[batch].set_ylim(np.min(np.concatenate((z1[:,1], z2[:,1]))), np.max(np.concatenate((z1[:,1], z2[:,1]))))
+
             axs[batch].spines['right'].set_visible(False)
             axs[batch].spines['top'].set_visible(False)  
-        
-    plt.tight_layout()    
+
+            axs[batch].set_xlim(np.min(np.concatenate([x[:,0] for x in zs])), np.max(np.concatenate([x[:,0] for x in zs])))
+            axs[batch].set_ylim(np.min(np.concatenate([x[:,1] for x in zs])), np.max(np.concatenate([x[:,1] for x in zs])))
+
+            if label_inplace:
+                adjust_text(texts, only_move={'points':'xy', 'texts':'xy'})        
+    plt.tight_layout()
     if save:
         fig.savefig(save, bbox_inches = "tight")
