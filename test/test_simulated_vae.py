@@ -179,6 +179,9 @@ m, gamma = 0.3, 10
 lambs = [1, 0.01, 1.0, 0.0, 0, 1e-5, 0.1]
 contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
 # contr_loss = SupervisedContrastiveLoss()
+model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
+losses = model1.train(nepochs = 100)
+
 model1 = scdisinfact.scdisinfact(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
 losses = model1.train(nepochs = 100)
 # torch.save(model1.state_dict(), result_dir + "model.pth")
