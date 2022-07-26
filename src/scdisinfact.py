@@ -28,12 +28,16 @@ class dataset(Dataset):
 
         # further standardize the count
         self.counts_stand = torch.FloatTensor(StandardScaler().fit_transform(self.counts_norm))
-        self.anno = torch.Tensor(anno)
+        if anno is not None:
+            self.anno = torch.Tensor(anno)
+        else:
+            self.anno = None
         self.libsizes = torch.FloatTensor(self.libsizes)
         # make sure the input time point are integer
         self.diff_labels = []
         # loop through all types of diff labels
         for diff_label in diff_labels:
+            assert diff_label.shape[0] == self.counts_stand.shape[0]
             self.diff_labels.append(torch.LongTensor(diff_label))
         self.batch_id = torch.Tensor(batch_id)
 
@@ -334,7 +338,7 @@ class scdisinfact_ae(nn.Module):
                                 # calculate cross entropy loss
                                 loss_class_test += ce_loss(input = d_pred, target = x["diff_labels"][condi].to(self.device))
                                 # calculate group lasso
-                                loss_gl_d_test += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight, alpha = 1e-2)
+                                loss_gl_d_test += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight, alpha = 0)
                                 
                             mu, pi, theta = self.Dec(torch.concat([z_c] + z_d, dim = 1))
                             
@@ -352,7 +356,7 @@ class scdisinfact_ae(nn.Module):
                             loss_tc_test_disc = ce_loss(input = torch.cat([y_orig, y_perm], dim = 0), 
                                                         target =torch.tensor([0] * y_orig.shape[0] + [1] * y_perm.shape[0]).to(self.device))
         
-                            loss_gl_c_test += loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight, alpha = 1e-2)
+                            loss_gl_c_test += loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight, alpha = 0)
                             loss_recon_test += loss_func.ZINB(pi = pi, theta = theta, scale_factor = x["libsize"].to(self.device), ridge_lambda = lamb_pi).loss(y_true = x["count"].to(self.device), y_pred = mu)
 
                         loss_mmd_test = loss_func.maximum_mean_discrepancy(xs = torch.cat(z_cs["z"], dim = 0), batch_ids = torch.cat(z_cs["batch_id"], dim = 0))
@@ -1358,12 +1362,13 @@ class scdisinfact(nn.Module):
         New model that separate the encoder and control backward gradient. (VARIATIONAL AUTOENCODER)
 
     """
-    def __init__(self, datasets, Ks = [16, 8], batch_size = 64, interval = 10, lr = 5e-4, lambs = [1,1,1,1,1,1], seed = 0, device = device, contr_loss = None):
+    def __init__(self, datasets, Ks = [16, 8], batch_size = 64, interval = 10, lr = 5e-4, lambs = [1,1,1,1,1,1], seed = 0, device = device):
         super().__init__()
         # initialize the parameters
         self.datasets = datasets
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
-        self.n_diff_types = len(self.Ks["diff_factors"])
+        # number of diff factors
+        self.n_diff_factors = len(self.Ks["diff_factors"])
 
         self.batch_size = batch_size
         self.interval = interval
@@ -1371,7 +1376,6 @@ class scdisinfact(nn.Module):
         self.lambs = lambs
         self.seed = seed 
         self.device = device
-        self.contr = contr_loss
 
         if seed is not None:
             np.random.seed(seed)
@@ -1383,10 +1387,10 @@ class scdisinfact(nn.Module):
         self.test_loaders = []
         # store the number of cells for each batch
         self.ncells = []
-        # store the number of unique diff labels [[unique label type 1], [unique label type 2], ...]
-        self.diff_labels = [[] for x in range(self.n_diff_types)]
+        # store diff labels for each diff factor [[unique label type 1], [unique label type 2], ...]
+        self.diff_labels = [[] for x in range(self.n_diff_factors)]
         for batch_id, dataset in enumerate(self.datasets):
-            assert self.n_diff_types == len(dataset.diff_labels)
+            assert self.n_diff_factors == len(dataset.diff_labels)
             # total number of cells
             self.ncells.append(dataset.counts.shape[0])
             # create train loader 
@@ -1411,20 +1415,21 @@ class scdisinfact(nn.Module):
             for idx, diff_label in enumerate(dataset.diff_labels):
                 self.diff_labels[idx].extend([x.item() for x in torch.unique(diff_label)])
         
-        for idx in range(self.n_diff_types):
-            self.diff_labels[idx] = set(self.diff_labels[idx]) 
+        # unique diff labels for each diff factor
+        for diff_factor in range(self.n_diff_factors):
+            self.diff_labels[diff_factor] = set(self.diff_labels[diff_factor]) 
 
         # create model
         # encoder for common biological factor, + 1 here refers to the one batch ID
         self.Enc_c = model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["common_factor"]], dropout_rate = 0, negative_slope = 0.2).to(self.device)
         # encoder for time factor, + 1 here refers to the one batch ID
         self.Enc_ds = []
-        for idx in range(self.n_diff_types):
+        for idx in range(self.n_diff_factors):
             self.Enc_ds.append(model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["diff_factors"][idx]], dropout_rate = 0, negative_slope = 0.2).to(self.device))
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
         # use a linear classifier as stated in the paper
         self.classifiers = []
-        for idx in range(self.n_diff_types):
+        for idx in range(self.n_diff_factors):
             self.classifiers.append(nn.Linear(self.Ks["diff_factors"][idx], len(self.diff_labels[idx])).to(self.device))
         # NOTE: reconstruct the original data, use all latent dimensions as input
         self.Dec = model.Decoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]) + 1, 64, 256, self.ngenes], dropout_rate = 0, negative_slope = 0.2).to(self.device)
@@ -1464,7 +1469,6 @@ class scdisinfact(nn.Module):
         loss_class_tests = []
         loss_gl_d_tests = []
         loss_gl_c_tests = []
-        loss_contr_tests = []
         loss_tc_tests = []
 
         for epoch in range(nepochs + 1):
@@ -1508,7 +1512,7 @@ class scdisinfact(nn.Module):
                 # calculate global mmd loss
                 loss_mmd = loss_func.maximum_mean_discrepancy(xs = torch.cat(z_cs["z_mu"], dim = 0), batch_ids = torch.cat(z_cs["batch_id"], dim = 0), device = self.device)
                 # total loss
-                loss = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd + self.lambs[5] * loss_kl + self.lambs[4] * loss_gl_c
+                loss = loss_recon + self.lambs[0] * loss_mmd + self.lambs[4] * loss_kl + self.lambs[3] * loss_gl_c
                 loss.backward()
                 self.opt.step()
                 self.opt.zero_grad()
@@ -1518,11 +1522,10 @@ class scdisinfact(nn.Module):
                 loss_kl = 0
                 loss_mmd = 0
                 loss_gl_d = 0
-                loss_contr = 0
                 loss_tc = 0
 
                 z_ds = []
-                for condi in range(self.n_diff_types):
+                for diff_factor in range(self.n_diff_factors):
                     z_ds.append({"diff_label": [], "z_mu":[], "z_logvar":[], "z": [], "batch_id": []})
 
                 for x in data_batch:
@@ -1533,22 +1536,22 @@ class scdisinfact(nn.Module):
                         z_c = self.reparametrize(z_mu_c, z_logvar_c)
 
                     # loop through the diff encoder for each condition types
-                    for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
+                    for diff_factor, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
                         _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                         # sample the latent space for each diff encoder
                         _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
 
                         # NOTE: an alternative is to use z after sample
-                        z_ds[condi]["z"].append(_z_d)
-                        z_ds[condi]["z_logvar"].append(_z_logvar_d)
-                        z_ds[condi]["z_mu"].append(_z_mu_d)
-                        z_ds[condi]["diff_label"].append(x["diff_labels"][condi])
-                        z_ds[condi]["batch_id"].append(x["batch_id"])
+                        z_ds[diff_factor]["z"].append(_z_d)
+                        z_ds[diff_factor]["z_logvar"].append(_z_logvar_d)
+                        z_ds[diff_factor]["z_mu"].append(_z_mu_d)
+                        z_ds[diff_factor]["diff_label"].append(x["diff_labels"][diff_factor])
+                        z_ds[diff_factor]["batch_id"].append(x["batch_id"])
 
                         # make prediction
                         d_pred = classifier(_z_d)
                         # calculate the cross-entropy loss
-                        loss_class += ce_loss(input = d_pred, target = x["diff_labels"][condi].to(self.device))
+                        loss_class += ce_loss(input = d_pred, target = x["diff_labels"][diff_factor].to(self.device))
                         # calculate the group lasso for each diff encoder     
                         loss_gl_d += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight)
                         # calculate kl divergence with prior distribution
@@ -1559,7 +1562,7 @@ class scdisinfact(nn.Module):
                     orig_samples = torch.cat([z_c, torch.cat([x["z"][-1] for x in z_ds], dim = 1)], dim = 1)
                     # create permuted samples
                     perm_idx = []
-                    for condi in range(self.n_diff_types):
+                    for diff_factor in range(self.n_diff_factors):
                         perm_idx.append(torch.randperm(n = orig_samples.shape[0]))
                     perm_samples = torch.cat([z_c, torch.cat([x["z"][-1][perm_idx[i], :] for i, x in enumerate(z_ds)], dim = 1)], dim = 1)
                     # not updating the discriminator
@@ -1571,20 +1574,19 @@ class scdisinfact(nn.Module):
                     loss_tc -= ce_loss(input = torch.cat([y_orig, y_perm], dim = 0), target = torch.tensor([0] * y_orig.shape[0] + [1] * y_perm.shape[0]).to(self.device))
 
                 # contrastive loss, note that the same data batch have cells from only one cluster, contrastive loss should be added jointly
-                for condi in range(self.n_diff_types):
+                for diff_factor in range(self.n_diff_factors):
                     # contrastive loss, loop through all condition types
-                    z_ds[condi]["z_mu"] = torch.cat(z_ds[condi]["z_mu"], dim = 0)
-                    z_ds[condi]["diff_label"] = torch.cat(z_ds[condi]["diff_label"], dim = 0)
-                    z_ds[condi]["batch_id"] = torch.cat(z_ds[condi]["batch_id"], dim = 0)
-                    loss_contr += self.contr(z_ds[condi]["z_mu"], z_ds[condi]["diff_label"])  
+                    z_ds[diff_factor]["z_mu"] = torch.cat(z_ds[diff_factor]["z_mu"], dim = 0)
+                    z_ds[diff_factor]["diff_label"] = torch.cat(z_ds[diff_factor]["diff_label"], dim = 0)
+                    z_ds[diff_factor]["batch_id"] = torch.cat(z_ds[diff_factor]["batch_id"], dim = 0)
 
                     # condition specific mmd loss
-                    for diff_label in range(self.n_diff_types):
-                        idx = z_ds[condi]["diff_label"] == diff_label
-                        loss_mmd += loss_func.maximum_mean_discrepancy(xs = z_ds[condi]["z_mu"][idx, :], batch_ids = z_ds[condi]["batch_id"][idx], device = self.device)
+                    for diff_label in self.diff_labels[diff_factor]:
+                        idx = z_ds[diff_factor]["diff_label"] == diff_label
+                        loss_mmd += loss_func.maximum_mean_discrepancy(xs = z_ds[diff_factor]["z_mu"][idx, :], batch_ids = z_ds[diff_factor]["batch_id"][idx], device = self.device)
 
 
-                loss = self.lambs[1] * loss_mmd + self.lambs[2] * loss_class + self.lambs[5] * loss_kl + self.lambs[3] * loss_contr + self.lambs[4] * loss_gl_d + self.lambs[6] * loss_tc
+                loss = self.lambs[0] * loss_mmd + self.lambs[1] * loss_class + self.lambs[4] * loss_kl + self.lambs[3] * loss_gl_d + self.lambs[2] * loss_tc
                 loss.backward()
                 self.opt.step()
                 self.opt.zero_grad()
@@ -1612,7 +1614,7 @@ class scdisinfact(nn.Module):
                     orig_samples = torch.cat([z_c] + z_d, dim = 1)
                     # create permuted samples
                     perm_idx = []
-                    for condi in range(self.n_diff_types):
+                    for diff_factor in range(self.n_diff_factors):
                         perm_idx.append(torch.randperm(n = orig_samples.shape[0]))
                     perm_samples = torch.cat([z_c, torch.cat([x[perm_idx[i], :] for i, x in enumerate(z_d)], dim = 1)], dim = 1)
                     # discriminator
@@ -1621,7 +1623,7 @@ class scdisinfact(nn.Module):
                     # total correlation correspond to cross entropy loss
                     loss_tc += ce_loss(input = torch.cat([y_orig, y_perm], dim = 0), target = torch.tensor([0] * y_orig.shape[0] + [1] * y_perm.shape[0]).to(self.device))
 
-                loss = self.lambs[6] * loss_tc
+                loss = self.lambs[2] * loss_tc
                 loss.backward()
                 self.opt.step()
                 self.opt.zero_grad()    
@@ -1634,11 +1636,10 @@ class scdisinfact(nn.Module):
                 loss_gl_c_test = 0
                 loss_gl_d_test = 0
                 loss_kl_test = 0
-                loss_contr_test = 0
 
                 z_ds = []
                 z_cs = {"z_mu":[], "z_logvar":[], "z": [], "batch_id": []}
-                for condi in range(self.n_diff_types):
+                for diff_factor in range(self.n_diff_factors):
                     z_ds.append({"diff_label": [], "z_mu":[], "z_logvar":[], "z": [], "batch_id": []})
 
                 with torch.no_grad():
@@ -1659,23 +1660,23 @@ class scdisinfact(nn.Module):
 
                             # diff encoder
                             z_d = []
-                            for condi, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
+                            for diff_factor, (Enc_d, classifier) in enumerate(zip(self.Enc_ds, self.classifiers)):
                                 # loop through all condition types, and conduct sampling
                                 z_mu_d, z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
                                 _z_d = self.reparametrize(z_mu_d, z_logvar_d)
                                 z_d.append(_z_d)
                                 
                                 # NOTE: an alternative is to use z after sample
-                                z_ds[condi]["z"].append(_z_d)
-                                z_ds[condi]["z_logvar"].append(z_logvar_d)
-                                z_ds[condi]["z_mu"].append(z_mu_d)
-                                z_ds[condi]["diff_label"].append(x["diff_labels"][condi])
-                                z_ds[condi]["batch_id"].append(x["batch_id"])
+                                z_ds[diff_factor]["z"].append(_z_d)
+                                z_ds[diff_factor]["z_logvar"].append(z_logvar_d)
+                                z_ds[diff_factor]["z_mu"].append(z_mu_d)
+                                z_ds[diff_factor]["diff_label"].append(x["diff_labels"][diff_factor])
+                                z_ds[diff_factor]["batch_id"].append(x["batch_id"])
 
                                 # make prediction for current condition type
                                 d_pred = classifier(_z_d)
                                 # calculate cross entropy loss
-                                loss_class_test += ce_loss(input = d_pred, target = x["diff_labels"][condi].to(self.device))
+                                loss_class_test += ce_loss(input = d_pred, target = x["diff_labels"][diff_factor].to(self.device))
                                 # calculate group lasso
                                 loss_gl_d_test += loss_func.grouplasso(Enc_d.fc.fc_layers[0].linear.weight, alpha = 1e-2)
                                 # calculate the kl divergence
@@ -1688,7 +1689,7 @@ class scdisinfact(nn.Module):
                             orig_samples = torch.cat([z_c] + z_d, dim = 1)
                             # create permuted samples
                             perm_idx = []
-                            for condi in range(self.n_diff_types):
+                            for diff_factor in range(self.n_diff_factors):
                                 perm_idx.append(torch.randperm(n = orig_samples.shape[0]))
                             perm_samples = torch.cat([z_c, torch.cat([x[perm_idx[i], :] for i, x in enumerate(z_d)], dim = 1)], dim = 1)
                             y_orig = self.disc(orig_samples)
@@ -1704,19 +1705,17 @@ class scdisinfact(nn.Module):
                         
 
 
-                        for condi in range(self.n_diff_types):
-                            # contrastive loss, loop through all condition types
-                            loss_contr_test += self.contr(torch.cat(z_ds[condi]['z_mu']), torch.cat(z_ds[condi]['diff_label']))  
-                            # condition specific mmd loss
-                            z_ds[condi]["z_mu"] = torch.cat(z_ds[condi]["z_mu"], dim = 0)
-                            z_ds[condi]["diff_label"] = torch.cat(z_ds[condi]["diff_label"], dim = 0)
-                            z_ds[condi]["batch_id"] = torch.cat(z_ds[condi]["batch_id"], dim = 0)
-                            for diff_label in range(self.n_diff_types):
-                                idx = z_ds[condi]["diff_label"] == diff_label
-                                loss_mmd_test += loss_func.maximum_mean_discrepancy(xs = z_ds[condi]["z_mu"][idx, :], batch_ids = z_ds[condi]["batch_id"][idx], device = self.device)
+                        for diff_factor in range(self.n_diff_factors):
+                            # condition specific mmd loss: For each diff_factor, make sure that the cells with the same condition(diff label) across batches to be mixed 
+                            z_ds[diff_factor]["z_mu"] = torch.cat(z_ds[diff_factor]["z_mu"], dim = 0)
+                            z_ds[diff_factor]["diff_label"] = torch.cat(z_ds[diff_factor]["diff_label"], dim = 0)
+                            z_ds[diff_factor]["batch_id"] = torch.cat(z_ds[diff_factor]["batch_id"], dim = 0)
+                            for diff_label in self.diff_labels[diff_factor]:
+                                idx = z_ds[diff_factor]["diff_label"] == diff_label
+                                loss_mmd_test += loss_func.maximum_mean_discrepancy(xs = z_ds[diff_factor]["z_mu"][idx, :], batch_ids = z_ds[diff_factor]["batch_id"][idx], device = self.device)
 
                         # total loss
-                        loss_test = self.lambs[0] * loss_recon + self.lambs[1] * loss_mmd_test + self.lambs[2] * loss_class_test + self.lambs[3] * loss_contr + self.lambs[4] * (loss_gl_d_test+loss_gl_c_test) + self.lambs[5] * loss_kl_test + self.lambs[6] * loss_tc
+                        loss_test = loss_recon + self.lambs[0] * loss_mmd_test + self.lambs[1] * loss_class_test + self.lambs[3] * (loss_gl_d_test+loss_gl_c_test) + self.lambs[4] * loss_kl_test + self.lambs[2] * loss_tc
                     
                         print('Epoch {}, Validating Loss: {:.4f}'.format(epoch, loss_test.item()))
                         info = [
@@ -1724,7 +1723,6 @@ class scdisinfact(nn.Module):
                             'loss kl: {:.5f}'.format(loss_kl_test.item()),
                             'loss mmd: {:.5f}'.format(loss_mmd_test.item()),
                             'loss classification: {:.5f}'.format(loss_class_test.item()),
-                            'loss contrastive: {:.5f}'.format(loss_contr_test.item()),
                             'loss group lasso common: {:.5f}'.format(loss_gl_c_test.item()), 
                             'loss group lasso diff: {:.5f}'.format(loss_gl_d_test.item()), 
                             'loss total correlation (disc): {:.5f}'.format(loss_tc_test_disc.item())
@@ -1736,7 +1734,6 @@ class scdisinfact(nn.Module):
                         loss_recon_tests.append(loss_recon.item())
                         loss_mmd_tests.append(loss_mmd_test.item())
                         loss_class_tests.append(loss_class_test.item())
-                        loss_contr_tests.append(loss_contr_test.item())
                         loss_kl_tests.append(loss_kl_test.item())
                         loss_gl_d_tests.append(loss_gl_d_test.item())
                         loss_gl_c_tests.append(loss_gl_c_test.item())

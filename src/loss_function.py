@@ -225,7 +225,7 @@ def grouplasso(W, alpha = 1e-4):
     # l2 norm on rows
     l2_norm = W.pow(2).sum(dim=0).add(1e-8).pow(1/2.)
     # group lasso + smoothing term
-    loss_gl = torch.sum((l2_norm >= alpha) * l2_norm + (l2_norm < alpha) * (W.pow(2).sum(dim=0).add(1e-8)/(2*alpha + 1e-8) + alpha/2))
+    loss_gl = torch.mean((l2_norm >= alpha) * l2_norm + (l2_norm < alpha) * (W.pow(2).sum(dim=0).add(1e-8)/(2*alpha + 1e-8) + alpha/2))
     return loss_gl
 
 def estimate_entropies(qz_samples, mus, logvars, device):
