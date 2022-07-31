@@ -112,8 +112,8 @@ Ks = [12, 4]
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
 # model1 = scdisinfact.scdisinfact_ae(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
 losses = model1.train(nepochs = 1000)
-torch.save(model1.state_dict(), result_dir + "model.pth")
-model1.load_state_dict(torch.load(result_dir + "model.pth"))
+# torch.save(model1.state_dict(), result_dir + "model.pth")
+# model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
@@ -197,7 +197,7 @@ utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cluster number"].values.squeez
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["characteristics: response"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (7,5), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
 
 
-# In[] Test with only T cells
+# In[] Test with only T cells, didn't see clear separation of clusters
 umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
 
 x_umap = umap_op.fit_transform(np.concatenate(counts_sub_array, axis = 0))
@@ -218,45 +218,48 @@ for batch, batch_name in enumerate(batch_sub_names):
 
 save_file = None
 
-utils.plot_latent(x_umaps, annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "modality", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umaps, annos = [x["characteristics: patinet ID (Pre=baseline; Post= on treatment)"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", save = result_dir + "batches_sub.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
 
-utils.plot_latent(x_umaps, annos = [x["characteristics: response"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umaps, annos = [x["characteristics: response"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", save = result_dir + "conditions_sub.png", figsize = (12,10), axis_label = "UMAP", markerscale = 6)
 
-utils.plot_latent(x_umaps, annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", save = None, figsize = (15, 10), axis_label = "Latent", markerscale = 6)
+utils.plot_latent(x_umaps, annos = [x["Cluster number"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", save = result_dir + "celltype_sub.png", figsize = (12, 10), axis_label = "Latent", markerscale = 6)
 
-utils.plot_latent(x_umaps, annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "separate", save = save_file, figsize = (10,140), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umaps, annos = [x["Cluster number"].values.squeeze() for x in meta_cells_sub_array], mode = "separate", save = save_file, figsize = (10,140), axis_label = "UMAP", markerscale = 6)
 
 # In[] training the model
 import importlib 
 importlib.reload(scdisinfact)
-m, gamma = 0.3, 10
-# reconstruction, mmd, cross_entropy, contrastive, group_lasso, kl divergence, total correlation
-lambs = [1, 0.01, 1.0, 0.0, 0, 1e-5, 0.1]
-lambs = [1, 0.00, 0.0, 0.0, 0, 1e-5, 0.0]
-Ks = [20, 4]
-contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
-# contr_loss = SupervisedContrastiveLoss()
-model1 = scdisinfact.scdisinfact(datasets = datasets_sub_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
-losses = model1.train(nepochs = 100)
-# torch.save(model1.state_dict(), result_dir + "model.pth")
-# model1.load_state_dict(torch.load(result_dir + "model.pth"))
+# reconstruction, mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+# lambs = [1, 0.00, 0.0, 0.0, 0, 0, 0.0]
+Ks = [12, 4]
 
- # In[] Plot the loss curve
-# loss_test, loss_recon, loss_mmd, loss_class, loss_gl_d, loss_gl_c = losses
+model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
+# model1 = scdisinfact.scdisinfact_ae(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
+losses = model1.train(nepochs = 300)
+torch.save(model1.state_dict(), result_dir + "model_sub.pth")
+model1.load_state_dict(torch.load(result_dir + "model_sub.pth"))
 
-# iters = np.arange(1, len(loss_gl_c)+1)
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_gl_c, "-*", label = 'Group Lasso common')
-# ax.plot(iters, loss_gl_d, "-*", label = 'Group Lasso diff')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_gl_c):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-# for i, j in zip(iters, loss_gl_d):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
+# In[] Plot the loss curve
+plt.rcParams["font.size"] = 20
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+iters = np.arange(1, len(loss_tests)+1)
 
-# fig.savefig(result_dir+'/gl_both_ent_loss.png', bbox_inches = "tight")
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_tests, "-*", label = 'Total loss')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 # In[] Plot results
 z_cs = []
@@ -311,9 +314,9 @@ if not os.path.exists(result_dir + comment):
 
 utils.plot_latent(zs = z_cs_umaps, annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "separate", axis_label = "UMAP", figsize = (10,70), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [x["characteristics: patinet ID (Pre=baseline; Post= on treatment)"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["characteristics: response"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [x["characteristics: patinet ID (Pre=baseline; Post= on treatment)"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (15,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [x["CD8+T annotation"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [x["characteristics: response"].values.squeeze() for x in meta_cells_sub_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
 
 
 # %%

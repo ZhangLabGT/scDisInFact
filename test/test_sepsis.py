@@ -1,274 +1,229 @@
 # In[]
+from random import random
 import sys, os
-sys.path.append('../src')
-
 import torch
+import numpy as np 
+import pandas as pd
+sys.path.append("../src")
+import torch.optim as opt
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import StandardScaler
+from torch.autograd import Variable
+import scdisinfact
+import loss_function as loss_func
+import utils
+import bmk
 
-from torch.utils.data import DataLoader
+import anndata as ad
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
-
-import pandas as pd 
-import numpy as np
-import random 
-from sklearn.preprocessing import StandardScaler
 from umap import UMAP
+import seaborn
+import scipy.sparse as sparse
+import warnings
+warnings.filterwarnings('ignore')
 
-from model import Encoder, Decoder, OutputLayer
-from loss_function import *
-
-from dataset import dataset
-from scipy import sparse
-
-import utils
-import model
-import train
-from sklearn.metrics import adjusted_rand_score as ARI
-from sklearn.metrics import normalized_mutual_info_score as NMI
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-from sklearn.preprocessing import LabelEncoder
-from metrics import *
-import anndata as ad
-
-class dataset(Dataset):
-
-    def __init__(self, counts, anno, time_point, batch_id, group_id):
-
-        assert not len(counts) == 0, "Count is empty"
-        # normalize the count
-        self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
-        # is the tile necessary?
-        
-        self.counts_norm = counts/self.libsizes * 100
-        self.counts_norm = np.log1p(self.counts_norm)
-        self.counts = torch.FloatTensor(counts)
-
-        # further standardize the count
-        self.counts_stand = torch.FloatTensor(StandardScaler().fit_transform(self.counts_norm))
-        self.anno = torch.Tensor(anno)
-        self.libsizes = torch.FloatTensor(self.libsizes)
-        self.time_point = torch.Tensor(time_point)
-        self.batch_id = torch.Tensor(batch_id)
-        self.group_id = torch.Tensor(group_id)
-
-    def __len__(self):
-        return self.counts.shape[0]
-    
-    def __getitem__(self, idx):
-        # data original data, index the index of cell, label, corresponding labels, batch, corresponding batch number
-        if self.anno is not None:
-            sample = {"batch_id": self.batch_id[idx], "time_point": self.time_point[idx], "group_id": self.group_id[idx], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "libsize": self.libsizes[idx]}
-        else:
-            sample = {"batch_id": self.batch_id[idx], "time_point": self.time_point[idx], "group_id": self.group_id[idx],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "libsize": self.libsizes[idx]}
-        return sample
+from anndata import AnnData
 
 # In[]
-le = LabelEncoder()
+# NOTE: the sepsis dataset include three cohorts. 
+# The primary corhort are subjects from Massachusetts General Hospital (MGH) with urinary-tract infection (UTI) admited to Emergency Department (ED).
+# Patients are classified as Leuk-UTI (no sepsis, 10 patients), Int-URO (with sepsis, 7 patients), and URO (with sepsis, 10 patients). 
+# Two secondary corhorts from Brigham and Women’s Hospital (BWH): 1. bacteremic individuals with sepsis in hospital wards (Bac-SEP).
+# 2. individual admitted to the medical intensive care unit (ICU) either with sepsis (ICU-SEP) or without sepsis (ICU-NoSEP)
+# for comparison, include healthy control in the end (details check the method part in the paper).
+# Two sample types, include CD45+ PBMC (1,000–1,500 cells per subject) and LIN–CD14–HLA-DR+ dendritic cells (300–500 cells per subject).
 
-# format: "Cohort Name": ([batch ids], time_point, UTI-label)
-batch_dict = {
-            #   'Control': ([4, 6], 0, 0),
-              'Leuk-UTI': ([3, 5], 0),
-              'Int-URO': ([7, 11], 1),
-              'URO': ([13, 15], 2),
-            #   'Bac-SEP': ([31, 33], 2, 0),
-            #   'ICU-SEP': ([19, 29], 2, 0),
-             }
+data_dir = "../data/sepsis/sepsis_batch_processed/"
+result_dir = "sepsis/"
+if not os.path.exists(result_dir):
+    os.makedirs(result_dir)
+# read in the dataset
+counts_array = []
+meta_cell_array = []
+for batch_id in range(1, 36):
+    if batch_id not in [25, 30]:
+        meta_cell = pd.read_csv(data_dir + f"meta_Batch_{batch_id}.csv", index_col = 0)
+        # Cell_Type stores the major cell type, Cell_State stores the detailed cell type, 
+        # Cohort stores the condition of disease, and biosample_id stores the tissue type, Patient for the patient ID
+        meta_cell_array.append(meta_cell)
+        counts = sparse.load_npz(data_dir + f"counts_Batch_{batch_id}.npz")
+        counts_array.append(counts.toarray())
 
-# Use all data but ICU-NoSEP, and use "group-id" to label whether this cohort includes UTI symptom,
+genes = np.loadtxt(data_dir + "genes_2000.txt", dtype = np.object)
+counts = np.concatenate(counts_array, axis = 0)
+adata = AnnData(X = counts)
+adata.obs = pd.concat(meta_cell_array, axis = 0)
+adata.var.index = genes
 
-dir = r'../data/scp_gex_matrix/processed_sepsis_7533/'
-batchsize = 8
-ngenes = 7533
-seed = 0
+# In[] filter the group that we need
+# NOTE: we use the primary cohort, including Leuk-UTI, Int-URO, URO, (and control?). The difference between control and Leuk-UTI is the infection of UTI not sepsis.
+adata_primary = adata[(adata.obs["Cohort"] == "Leuk-UTI")|(adata.obs["Cohort"] == "Int-URO")|(adata.obs["Cohort"] == "URO"), :]
+adata_secondary = adata[(adata.obs["Cohort"] == "Bac-SEP")|(adata.obs["Cohort"] == "ICU-NoSEP")|(adata.obs["Cohort"] == "ICU-SEP"), :]
+adata_pbmc = adata_primary[adata_primary.obs["biosample_id"] == "CD45",:]
+adata_leuk_uti = adata[adata.obs["Cohort"] == "Leuk-UTI", :]
+adata_int_uro = adata[adata.obs["Cohort"] == "Int-URO", :]
+adata_uro = adata[adata.obs["Cohort"] == "URO", :]
+adata_control = adata[adata.obs["Cohort"] == "Control", :]
+adata_bac_sep = adata[adata.obs["Cohort"] == "Bac-SEP", :]
+adata_icu_nosep = adata[adata.obs["Cohort"] == "ICU-NoSEP", :]
+adata_icu_sep = adata[adata.obs["Cohort"] == "ICU-SEP", :]
 
-torch.manual_seed(seed)
-np.random.seed(seed)
+# NOTE: Two ways of separating condition in primary cohort
+# 1. one condition for UTI, where control -> no UTI, and Leuk-UTI, Int-URO, and URO -> UTI; another condition for sepsis, where Control, Leuk-UTI -> no sepsis, Int-URO, URO
+# 2. Another way is to use Leuk-UTI, Int-URO, and URO (control? with no UTI)
 
-sc_datasets = []
-sc_datasets_raw = []
-train_loaders = []
-test_loaders = []
-train_loaders_raw = []
-test_loaders_raw = []
-n = 0
-for name, labels in batch_dict.items():
-    idxes = labels[0]
-    time_point = labels[1]
-    UTI_label = labels[2]
-    time_points = []
-    counts_rnas = []
-    group_ids = []
-    batch_ids = []
-    annos = []
-    for idx in idxes:
-        counts_rna = np.array(sparse.load_npz(os.path.join(dir, '{}/mtx_{}_batch_{}.npz'.format(name,name,idx))).todense())
-        anno = pd.read_csv(os.path.join(dir, '{}/meta_{}_batch{}.csv'.format(name, name,idx)))["Cell_Type"]
-        assert counts_rna.shape[0] == anno.shape[0]
-        anno = le.fit_transform(anno)
-        annos.append(anno)
-        counts_rnas.append(counts_rna)
-        time_points.append([time_point] * counts_rna.shape[0])
-        group_ids.append([UTI_label] * counts_rna.shape[0])
-        batch_ids.append([n] * counts_rna.shape[0])
-        sc_dataset_raw =  dataset(counts = counts_rna,anno = anno, time_point = [time_point] * counts_rna.shape[0], 
-                         group_id = [UTI_label] * counts_rna.shape[0], 
-                         batch_id = [n] * counts_rna.shape[0])
-        sc_datasets_raw.append(sc_dataset_raw)
-        train_loaders_raw.append(DataLoader(sc_dataset_raw, batch_size = batchsize, shuffle = True))
-        test_loaders_raw.append(DataLoader(sc_dataset_raw, batch_size = len(sc_dataset_raw), shuffle = False))
-        print(name, idx, 'finished')
-        n += 1
-    sc_dataset = dataset(counts = counts_rna,anno = np.concatenate(annos), time_point = np.concatenate(time_points), 
-                         group_id = np.concatenate(group_ids), 
-                         batch_id = np.concatenate(batch_ids))
-    sc_datasets.append(sc_dataset)
-    train_loaders.append(DataLoader(sc_dataset, batch_size = batchsize, shuffle = True))
-    test_loaders.append(DataLoader(sc_dataset, batch_size = len(sc_dataset), shuffle = False))
-    
-nbatches = len(sc_datasets_raw)
+# the second way
+batch_ids, batch_names = pd.factorize(adata_primary.obs["Batches"].values.squeeze())
+severity_ids, severity_names = pd.factorize(adata_primary.obs["Cohort"].values.squeeze())
 
+counts_array = []
+meta_cells_array = []
+datasets_array = []
+for batch_id, batch_name in enumerate(batch_names):
+    adata_batch = adata_primary[batch_ids == batch_id, :]
+    if adata_batch.shape[0] > 3000:
+        adata_batch = adata_batch[::2, :]
+        counts_array.append(adata_batch.X.toarray())
+        meta_cells_array.append(adata_batch.obs)
+        datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id][::2]], batch_id = batch_ids[batch_ids == batch_id][::2]))
 
+    else:
+        counts_array.append(adata_batch.X.toarray())
+        meta_cells_array.append(adata_batch.obs)
+        datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
+
+    print(len(datasets_array[-1]))
 # In[]
-import scanpy as sc
-from matplotlib import rcParams
+umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0)
 
-counts_norms = []
-annos = []
-batch_ids = []
-counts = 0
-for name, labels in batch_dict.items():
-    idxes = labels[0]
-    time_point = labels[1]
-    UTI_label = labels[2]
-    for idx in idxes:
-        counts_norms.append(sc_datasets_raw[counts].counts_norm)
-        annos.append(pd.read_csv(os.path.join(dir, '{}/meta_{}_batch{}.csv'.format(name, name,idx)))["Cell_Type"].values.squeeze())
-        # batch_ids.append(np.array(["time:" + str(time_point) + ", batch" + str(UTI_label) for x in range(counts_norms[-1].shape[0])]))
-        batch_ids.append(np.array([name for x in range(counts_norms[-1].shape[0])]))
-        assert annos[-1].shape[0] == counts_norms[-1].shape[0]
-        counts += 1
-adata = ad.AnnData(np.concatenate(counts_norms, axis = 0))
-
-adata.obs['Cell_Type'] = np.concatenate(annos)
-adata.obs['batch_id'] = np.concatenate(batch_ids)
-adata.obs['Cell_Type'] = adata.obs['Cell_Type'].astype("category")
-adata.obs['batch_id'] = adata.obs['batch_id'].astype("category")
-
-sc.pp.neighbors(adata, n_neighbors=15, n_pcs=40)
-sc.tl.umap(adata)
-
-save = None
-rcParams['figure.figsize'] = 14, 10
-sc.pl.umap(adata, color = ['batch_id'], save = save)
-sc.pl.umap(adata, color = ['Cell_Type'], save = save)
-
-# sc.tl.leiden(adata, resolution = 0.1)
-# sc.pl.umap(adata, color = ['leiden'], save=save)
-
-# In[]
-# initialize the model
-import importlib 
-importlib.reload(train)
-ldim = 32
-lr = 5e-4
-model_dict = {}
-model_dict["encoder"] = model.Encoder(features = [ngenes, 256, 32, ldim], dropout_rate = 0, negative_slope = 0.2).to(device)
-model_dict["decoder"] = model.Decoder(features = [ldim, 32, 256, ngenes], dropout_rate = 0, negative_slope = 0.2).to(device)
-# initialize the optimizer
-param_to_optimize = [
-    {'params': model_dict["encoder"].parameters()},
-    {'params': model_dict["decoder"].parameters()}
-]
-
-optim_ae = torch.optim.Adam(param_to_optimize, lr=lr)
-
-# use Circle loss to distinguish different time points
-contrastive_loss = CircleLoss(m=0.25, gamma= 80)
-# contrastive_loss = TripletLoss(margin=0.3)
-# contrastive_loss = torch.nn.CrossEntropyLoss()
-# contrastive_loss = SupConLoss()
-# contrastive_loss = SupervisedContrastiveLoss()
-lamb_contr_time = 1e-2
-lamb_contr_group = 1e-2
-lamb_mmd = 0
-lamb_recon = 0
-n_epoches = 30
-time_dim = 5
-group_dim = 5
-losses = train.train_epoch_mmd(model_dict = model_dict, train_data_loaders = train_loaders_raw, test_data_loaders = test_loaders_raw, 
-                      optimizer = optim_ae, n_epoches = n_epoches, interval = 10, lamb_mmd = lamb_mmd, lamb_recon = lamb_recon, lamb_contr_time = lamb_contr_time, lamb_contr_group = lamb_contr_group,
-                      lamb_pi = 1e-5, use_zinb = True, contr_loss=contrastive_loss, 
-                      time_dim = time_dim, group_dim = group_dim)
-
-
-# In[]
-umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.3, random_state = 0) 
-
-zs = []
-# batch_ids = [0, 6]
-# test_loaders_sub = [test_loaders_raw[i] for i in batch_ids]
-test_loaders_sub = test_loaders_raw
-nbatches_sub = len(test_loaders_sub)
-annos_sub = annos
-time_sub = []
-group_sub = []
-for data_batch in zip(*test_loaders_sub):
-    with torch.no_grad():
-        for idx, x in enumerate(data_batch):
-            z = model_dict["encoder"](x["count_stand"].to(device))
-            mu, pi, theta = model_dict["decoder"](z)
-            zs.append(z.cpu().detach().numpy())
-            time_sub.append(x["time_point"])
-            group_sub.append(x["group_id"])
-
-# use the shared dimensions
-x_umap_shared = umap_op.fit_transform(np.concatenate(zs, axis = 0)[:, (time_dim + group_dim):])
-# use the time dimensions
-x_umap_time = umap_op.fit_transform(np.concatenate(zs, axis = 0)[:, : time_dim])
-# x_umap_time = np.concatenate(zs, axis = 0)[:, :time_dim]
-# use the group dimensions
-x_umap_group = umap_op.fit_transform(np.concatenate(zs, axis = 0)[:, time_dim:(time_dim + group_dim)])
-# x_umap_group = np.concatenate(zs, axis = 0)[:, time_dim:(time_dim + group_dim)]
-
+x_umap = umap_op.fit_transform(np.concatenate([x.counts_norm for x in datasets_array], axis = 0))
 # separate into batches
-x_umaps_shared = []
-x_umaps_time = []
-x_umaps_group = []
+x_umaps = []
+for batch, _ in enumerate(counts_array):
+    if batch == 0:
+        start_pointer = 0
+        end_pointer = start_pointer + counts_array[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+    elif batch == (len(counts_array) - 1):
+        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+        x_umaps.append(x_umap[start_pointer:,:])
+    else:
+        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+        end_pointer = start_pointer + counts_array[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
 
-for batch in range(nbatches_sub):
+save_file = None
+
+utils.plot_latent(x_umaps, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "batches.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
+
+utils.plot_latent(x_umaps, annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "conditions1.png", figsize = (12,10), axis_label = "UMAP", markerscale = 6)
+
+utils.plot_latent(x_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltype.png", figsize = (12, 10), axis_label = "Latent", markerscale = 6, label_inplace = True, text_size = "small")
+
+utils.plot_latent(x_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltype.png", figsize = (12, 10), axis_label = "Latent", markerscale = 6, label_inplace = True, text_size = "small")
+
+# utils.plot_latent(x_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "separate", save = result_dir + "separate.png", figsize = (10, 70), axis_label = "Latent", markerscale = 6)
+
+
+# In[]
+import importlib 
+importlib.reload(scdisinfact)
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, Kl divergence has a huge effect.
+lambs = [0, 1.0, 0.1, 1, 1e-6]
+# lambs = [1e-2, 1.0, 0.1, 1, 1e-5]
+Ks = [12, 4]
+
+model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 100, lr = 5e-4, lambs = lambs, seed = 0, device = device)
+losses = model1.train(nepochs = 600, recon_loss = "ZINB")
+torch.save(model1.state_dict(), result_dir + "model.pth")
+model1.load_state_dict(torch.load(result_dir + "model.pth"))
+
+# In[] Plot the loss curve
+plt.rcParams["font.size"] = 20
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+# loss_tests, loss_recon_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+iters = np.arange(1, len(loss_tests)+1)
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_tests, "-*", label = 'Total loss')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+# In[] Plot results
+z_cs = []
+z_ds = []
+zs = []
+
+for dataset in datasets_array:
+    with torch.no_grad():
+        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
+        # z_c = model1.Enc_c(dataset.counts_stand.to(model1.device))
+
+        z_ds.append([])
+        for Enc_d in model1.Enc_ds:
+            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
+            # z_d = Enc_d(dataset.counts_stand.to(model1.device))
+            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_cs.append(z_c.cpu().detach().numpy())
+        zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
+
+# UMAP
+umap_op = UMAP(min_dist = 0.1, random_state = 0)
+z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
+z_ds_umap = []
+z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
+zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
+
+z_ds_umaps = [[], []]
+z_cs_umaps = []
+zs_umaps = []
+for batch, _ in enumerate(datasets_array):
     if batch == 0:
         start_pointer = 0
         end_pointer = start_pointer + zs[batch].shape[0]
-        x_umaps_shared.append(x_umap_shared[start_pointer:end_pointer,:])
-        x_umaps_time.append(x_umap_time[start_pointer:end_pointer,:])
-        x_umaps_group.append(x_umap_group[start_pointer:end_pointer,:])
-    elif batch == (nbatches - 1):
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
+        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
+        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
+
+    elif batch == (len(datasets_array) - 1):
         start_pointer = start_pointer + zs[batch - 1].shape[0]
-        x_umaps_shared.append(x_umap_shared[start_pointer:,:])
-        x_umaps_time.append(x_umap_time[start_pointer:,:])
-        x_umaps_group.append(x_umap_group[start_pointer:,:])
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:,:])
+        z_cs_umaps.append(z_cs_umap[start_pointer:,:])
+        zs_umaps.append(zs_umap[start_pointer:,:])
+
     else:
         start_pointer = start_pointer + zs[batch - 1].shape[0]
         end_pointer = start_pointer + zs[batch].shape[0]
-        x_umaps_shared.append(x_umap_shared[start_pointer:end_pointer,:])
-        x_umaps_time.append(x_umap_time[start_pointer:end_pointer,:])
-        x_umaps_group.append(x_umap_group[start_pointer:end_pointer,:])
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
+        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
+        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-# utils.plot_latent(x_umaps_shared, annos = batch_ids, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+comment = f'plots_{Ks}_{lambs[1]}_{lambs[2]}_{lambs[3]}_{lambs[4]}/'
+if not os.path.exists(result_dir + comment):
+    os.makedirs(result_dir + comment)
 
-utils.plot_latent(x_umaps_shared, annos = annos_sub, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
-# utils.plot_latent(x_umaps_time, annos = batch_ids, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+# utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "separate", axis_label = "UMAP", figsize = (10,140), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15,10), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15,10), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15, 7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (7,5), save = (result_dir + comment+"diff_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (7,5), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
 
-utils.plot_latent(x_umaps_time, annos = time_sub, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
-# utils.plot_latent(x_umaps_group, annos = batch_ids, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
-
-utils.plot_latent(x_umaps_group, annos = group_sub, mode = "joint", save = None, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
 # %%

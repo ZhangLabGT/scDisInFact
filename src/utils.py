@@ -8,7 +8,8 @@ import numpy as np
 from scipy import sparse
 import os
 import pandas as pd
-
+from adjustText import adjust_text
+"""
 # This is the function to load batches and corresponding meta files,
 def load_batches(batch_id_1, batch_id_2, meta_file_lst, mtx_file_lst, path_base):
 
@@ -197,12 +198,11 @@ def plot_train(all_loss, type=None, batches=None):
         ax.set_ylabel("train loss")
     plt.show()
 
-
+"""
 #######################################################################
 # newly added functions
 #######################################################################
 
-from adjustText import adjust_text
 def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10), axis_label = "Latent", label_inplace = False, **kwargs):
     """\
     Description
@@ -228,7 +228,7 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         "s": 10,
         "alpha": 0.9,
         "markerscale": 1,
-        "text_size": "xx-large",
+        "text_size": "large",
         "colormap": "tab20b"
     }
     _kwargs.update(kwargs)
@@ -240,7 +240,7 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
         
         for batch in range(len(zs)):
             ax.scatter(zs[batch][:,0], zs[batch][:,1], color = colormap(batch), label = "batch " + str(batch + 1), s = _kwargs["s"], alpha = _kwargs["alpha"])
-        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(zs) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
         ax.tick_params(axis = "both", which = "major", labelsize = 15)
 
         ax.set_xlabel(axis_label + " 1", fontsize = 19)
@@ -314,8 +314,8 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
             axs[batch].set_xlim(np.min(np.concatenate([x[:,0] for x in zs])), np.max(np.concatenate([x[:,0] for x in zs])))
             axs[batch].set_ylim(np.min(np.concatenate([x[:,1] for x in zs])), np.max(np.concatenate([x[:,1] for x in zs])))
 
-            if label_inplace:
-                adjust_text(texts, only_move={'points':'xy', 'texts':'xy'})        
+            # if label_inplace:
+            #     adjust_text(texts, only_move={'points':'xy', 'texts':'xy'})        
     plt.tight_layout()
     if save:
         fig.savefig(save, bbox_inches = "tight")

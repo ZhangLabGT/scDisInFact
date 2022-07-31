@@ -16,7 +16,7 @@ import utils
 import bmk
 
 import anndata as ad
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
@@ -130,12 +130,13 @@ import importlib
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+# lambs = [0.01, 1.0, 0.0, 1, 1e-5]
 Ks = [12, 4, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-# losses = model1.train(nepochs = 1000)
+losses = model1.train(nepochs = 300, recon_loss = "ZINB")
 # torch.save(model1.state_dict(), result_dir + "model.pth")
-model1.load_state_dict(torch.load(result_dir + "model.pth"))
+# model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20

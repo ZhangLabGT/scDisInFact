@@ -16,7 +16,7 @@ import utils
 import bmk
 
 import anndata as ad
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
@@ -176,11 +176,12 @@ import importlib
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+# lambs = [0.01, 1.0, 0.0, 1, 1e-5]
 Ks = [12, 4, 4]
 # model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
 # losses = model1.train(nepochs = 100)
 model1 = scdisinfact.scdisinfact(datasets = datasets, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 100)
+losses = model1.train(nepochs = 100, recon_loss = "ZINB")
 # torch.save(model1.state_dict(), result_dir + "model.pth")
 # model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
@@ -255,7 +256,7 @@ for batch in range(n_batches):
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-comment = f'plots_{Ks}_{lambs[1]}_{lambs[2]}_{lambs[3]}_{lambs[4]}/'
+comment = f'plots_{Ks}_{lambs}/'
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 

@@ -95,28 +95,41 @@ class Decoder(nn.Module):
         return mu, pi, theta
 
 # The three output layers of DCA method
-class ACT_EXP(nn.Module):
+class MeanAct(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
     def forward(self, x):
-        return torch.exp(x)
+        return torch.clamp(torch.exp(x), min = 1e-5, max = 1e6)
+
+class DispAct(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x):
+        act = nn.Softplus()
+        return torch.clamp(act(x), min = 1e-4, max = 1e4)
 
 class OutputLayer(nn.Module):
-    def __init__(self, features=[256, 1024]) -> None:
+    def __init__(self, features=[256, 1024], zero_inflation = True) -> None:
         super().__init__()
         self.output_size = features[1]
         self.last_hidden = features[0]
-        self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), ACT_EXP())
-        # ! Parameter Pi needs Sigmoid as activation func 
-        self.pi_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), nn.Sigmoid())
-        self.theta_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), ACT_EXP())
+        self.zero_inflation = zero_inflation
+        self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), MeanAct())
+        # ! Parameter Pi needs Sigmoid as activation func
+        if self.zero_inflation: 
+            self.pi_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), nn.Sigmoid())
+        self.theta_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size),DispAct())
 
     def forward(self, decodedData):
-        Miu = self.mean_layer(decodedData)
-        Pi = self.pi_layer(decodedData)
-        Theta = self.theta_layer(decodedData)
-        return Miu, Pi, Theta
+        mu = self.mean_layer(decodedData)
+        theta = self.theta_layer(decodedData)
+        if self.zero_inflation:
+            pi = self.pi_layer(decodedData)
+            return mu, pi, theta
+        else:
+            return mu, theta
 
 class classifier(nn.Module):
     def __init__(self, features, dropout_rate = 0.0, negative_slop = 0.2):
