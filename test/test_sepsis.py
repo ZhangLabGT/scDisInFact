@@ -52,7 +52,7 @@ for batch_id in range(1, 36):
         counts = sparse.load_npz(data_dir + f"counts_Batch_{batch_id}.npz")
         counts_array.append(counts.toarray())
 
-genes = np.loadtxt(data_dir + "genes_2000.txt", dtype = np.object)
+genes = np.loadtxt(data_dir + "genes_5000.txt", dtype = np.object)
 counts = np.concatenate(counts_array, axis = 0)
 adata = AnnData(X = counts)
 adata.obs = pd.concat(meta_cell_array, axis = 0)
@@ -71,29 +71,23 @@ adata_bac_sep = adata[adata.obs["Cohort"] == "Bac-SEP", :]
 adata_icu_nosep = adata[adata.obs["Cohort"] == "ICU-NoSEP", :]
 adata_icu_sep = adata[adata.obs["Cohort"] == "ICU-SEP", :]
 
+
 # NOTE: Two ways of separating condition in primary cohort
 # 1. one condition for UTI, where control -> no UTI, and Leuk-UTI, Int-URO, and URO -> UTI; another condition for sepsis, where Control, Leuk-UTI -> no sepsis, Int-URO, URO
 # 2. Another way is to use Leuk-UTI, Int-URO, and URO (control? with no UTI)
 
 # the second way
-batch_ids, batch_names = pd.factorize(adata_primary.obs["Batches"].values.squeeze())
-severity_ids, severity_names = pd.factorize(adata_primary.obs["Cohort"].values.squeeze())
+batch_ids, batch_names = pd.factorize(adata_secondary.obs["Batches"].values.squeeze())
+severity_ids, severity_names = pd.factorize(adata_secondary.obs["Cohort"].values.squeeze())
 
 counts_array = []
 meta_cells_array = []
 datasets_array = []
 for batch_id, batch_name in enumerate(batch_names):
-    adata_batch = adata_primary[batch_ids == batch_id, :]
-    if adata_batch.shape[0] > 3000:
-        adata_batch = adata_batch[::2, :]
-        counts_array.append(adata_batch.X.toarray())
-        meta_cells_array.append(adata_batch.obs)
-        datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id][::2]], batch_id = batch_ids[batch_ids == batch_id][::2]))
-
-    else:
-        counts_array.append(adata_batch.X.toarray())
-        meta_cells_array.append(adata_batch.obs)
-        datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
+    adata_batch = adata_secondary[batch_ids == batch_id, :]
+    counts_array.append(adata_batch.X.toarray())
+    meta_cells_array.append(adata_batch.obs)
+    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
 
     print(len(datasets_array[-1]))
 # In[]
@@ -132,12 +126,12 @@ utils.plot_latent(x_umaps, annos = [x["Cell_State"].values.squeeze() for x in me
 import importlib 
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, Kl divergence has a huge effect.
-lambs = [0, 1.0, 0.1, 1, 1e-6]
+lambs = [1e-3, 1.0, 0.1, 1, 1e-5]
 # lambs = [1e-2, 1.0, 0.1, 1, 1e-5]
 Ks = [12, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 100, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 600, recon_loss = "ZINB")
+losses = model1.train(nepochs = 600, recon_loss = "NB")
 torch.save(model1.state_dict(), result_dir + "model.pth")
 model1.load_state_dict(torch.load(result_dir + "model.pth"))
 

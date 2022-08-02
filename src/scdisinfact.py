@@ -551,18 +551,18 @@ class scdisinfact(nn.Module):
                     z_cs["z_mu"].append(z_mu_c)                        
                     z_cs["batch_id"].append(x["batch_id"])
                     # freeze the gradient of Enc_d
-                    # with torch.no_grad():
-                    z_d = []
-                    z_mu_d = []
-                    z_logvar_d = []
-                    # loop through the encoder for each condition type
-                    for Enc_d in self.Enc_ds:
-                        _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
-                        # sampling
-                        _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
-                        z_d.append(_z_d)
-                        z_mu_d.append(_z_mu_d)
-                        z_logvar_d.append(_z_logvar_d)
+                    with torch.no_grad():
+                        z_d = []
+                        z_mu_d = []
+                        z_logvar_d = []
+                        # loop through the encoder for each condition type
+                        for Enc_d in self.Enc_ds:
+                            _z_mu_d, _z_logvar_d = Enc_d(torch.concat([x["count_stand"], x["batch_id"][:, None]], dim = 1).to(self.device))
+                            # sampling
+                            _z_d = self.reparametrize(_z_mu_d, _z_logvar_d)
+                            z_d.append(_z_d)
+                            z_mu_d.append(_z_mu_d)
+                            z_logvar_d.append(_z_logvar_d)
 
                     mu, pi, theta = self.Dec(torch.concat([z_c] + z_d + [x["batch_id"][:, None].to(self.device)], dim = 1))
                     # calculate the reconstruction loss
@@ -575,7 +575,7 @@ class scdisinfact(nn.Module):
                     # MSE
                     elif recon_loss == "MSE":
                         mse_loss = nn.MSELoss()
-                        loss_recon_test += mse_loss(mu * x["size_factor"].to(self.device), x["count"].to(self.device))
+                        loss_recon += mse_loss(mu * x["size_factor"].to(self.device), x["count"].to(self.device))
                     else:
                         raise ValueError("recon_loss can only be 'ZINB', 'NB', and 'MSE'")
                                     
@@ -591,6 +591,7 @@ class scdisinfact(nn.Module):
                 self.opt.zero_grad()
                 
                 # 2. train on diff factor
+                loss_recon = 0
                 loss_class = 0
                 loss_kl = 0
                 loss_mmd = 0
@@ -630,6 +631,21 @@ class scdisinfact(nn.Module):
                         # calculate kl divergence with prior distribution
                         loss_kl += torch.sum(_z_mu_d.pow(2).add_(_z_logvar_d.exp()).mul_(-1).add_(1).add_(_z_logvar_d)).mul_(-0.5)
 
+                    mu, pi, theta = self.Dec(torch.concat([z_c] + [x["z"][-1] for x in z_ds] + [x["batch_id"][:, None].to(self.device)], dim = 1))
+                    # calculate the reconstruction loss
+                    # ZINB
+                    if recon_loss == "ZINB":
+                        loss_recon += loss_func.ZINB(pi = pi, theta = theta, scale_factor = x["size_factor"].to(self.device), ridge_lambda = lamb_pi, device = self.device).loss(y_true = x["count"].to(self.device), y_pred = mu)
+                    # NB
+                    elif recon_loss == "NB":
+                        loss_recon += loss_func.NB(theta = theta, scale_factor = x["size_factor"].to(self.device), device = self.device).loss(y_true = x["count"].to(self.device), y_pred = mu)
+                    # MSE
+                    elif recon_loss == "MSE":
+                        mse_loss = nn.MSELoss()
+                        loss_recon += mse_loss(mu * x["size_factor"].to(self.device), x["count"].to(self.device))
+                    else:
+                        raise ValueError("recon_loss can only be 'ZINB', 'NB', and 'MSE'")
+
                     # NOTE: calculate the total correlation, use discriminator
                     # create original samples
                     orig_samples = torch.cat([z_c, torch.cat([x["z"][-1] for x in z_ds], dim = 1)], dim = 1)
@@ -659,7 +675,7 @@ class scdisinfact(nn.Module):
                         loss_mmd += loss_func.maximum_mean_discrepancy(xs = z_ds[diff_factor]["z_mu"][idx, :], batch_ids = z_ds[diff_factor]["batch_id"][idx], device = self.device)
 
 
-                loss = self.lambs[0] * loss_mmd + self.lambs[1] * loss_class + self.lambs[4] * loss_kl + self.lambs[3] * loss_gl_d + self.lambs[2] * loss_tc
+                loss = loss_recon + self.lambs[0] * loss_mmd + self.lambs[1] * loss_class + self.lambs[4] * loss_kl + self.lambs[3] * loss_gl_d + self.lambs[2] * loss_tc
                 loss.backward()
                 self.opt.step()
                 self.opt.zero_grad()
