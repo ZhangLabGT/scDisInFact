@@ -30,15 +30,23 @@ from anndata import AnnData
 # In[] Read in the dataset, filtering out the batches that we don't need
 # checked total cell count correct: 1,462,702 cells, genes: 5000
 data_dir = "../data/covid/batch_processed/"
+data_dir = "../data/covid/batch_raw/"
 result_dir = "covid/"
+result_dir = "covid_raw/"
+if not os.path.exists(result_dir):
+    os.makedirs(result_dir)
 batches = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17]
 patient_meta = pd.read_excel("../data/covid/patient_meta.xlsx")
+# genes = pd.read_csv(data_dir + "filtered_gene_5000.csv", index_col = 0).values.squeeze()
+genes = pd.read_csv(data_dir + "covid_gene.tsv", header = None).values.squeeze()
 
 counts_array = []
 meta_cells_array = []
 for batch_id in batches:
     # TODO: read genes and barcodes
-    counts_array.append(sparse.load_npz(data_dir + f"raw_filtered_batch{batch_id}.npz").toarray())
+    # counts_array.append(sparse.load_npz(data_dir + f"raw_filtered_batch{batch_id}.npz").toarray())
+    counts_array.append(sparse.load_npz(data_dir + f"mtx_batch{batch_id}_raw.npz").toarray())
+
     # NOTE: COLUMNS: cellName, sampleID, celltype, majorType, PatientID, Batches, City, Age, Sex, Sample type, CoVID-19 severity, Sample time, 
     # Sampling day (Days after symptom onset), SARS-CoV-2, Single cell sequencing platform, BCR single cell sequencing, CR single cell sequencing, 
     # Outcome, Comorbidities, COVID-19-related medication and anti-microbials Leukocytes [G/L], Neutrophils [G/L], Lymphocytes [G/L], Unpublished
@@ -48,8 +56,6 @@ for batch_id in batches:
     print(meta_cells_array[-1].shape[0])
     assert counts_array[-1].shape[0] == meta_cells_array[-1].shape[0]
     print(f'Batch ID: {batch_id}, number of cells: {counts_array[-1].shape[0]}')
-
-genes = pd.read_csv(data_dir + "filtered_gene_5000.csv", index_col = 0).values.squeeze()
 
 # NOTE: In the paper there are in total 5 conditions: 
 # 1. healthy donor (n = 25), 
@@ -129,12 +135,12 @@ utils.plot_latent(x_umaps, annos = [x["majorType"].values.squeeze() for x in met
 import importlib 
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
 # lambs = [0.01, 1.0, 0.0, 1, 1e-5]
 Ks = [12, 4, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 300, recon_loss = "ZINB")
+losses = model1.train(nepochs = 300, recon_loss = "NB")
 # torch.save(model1.state_dict(), result_dir + "model.pth")
 # model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
@@ -212,7 +218,7 @@ for batch, _ in enumerate(datasets_array):
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-comment = f'plots_{Ks}_{lambs[1]}_{lambs[2]}_{lambs[3]}_{lambs[4]}/'
+comment = f'plots_{Ks}_{lambs}/'
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 

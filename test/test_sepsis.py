@@ -38,6 +38,10 @@ from anndata import AnnData
 
 data_dir = "../data/sepsis/sepsis_batch_processed/"
 result_dir = "sepsis/"
+data_dir = "../data/sepsis/sepsis_batch_raw/split_batches/"
+result_dir = "sepsis_raw/"
+# genes = np.loadtxt(data_dir + "genes_5000.txt", dtype = np.object)
+genes = np.loadtxt(data_dir + "genes_raw.txt", dtype = np.object)
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 # read in the dataset
@@ -52,7 +56,6 @@ for batch_id in range(1, 36):
         counts = sparse.load_npz(data_dir + f"counts_Batch_{batch_id}.npz")
         counts_array.append(counts.toarray())
 
-genes = np.loadtxt(data_dir + "genes_5000.txt", dtype = np.object)
 counts = np.concatenate(counts_array, axis = 0)
 adata = AnnData(X = counts)
 adata.obs = pd.concat(meta_cell_array, axis = 0)
@@ -126,7 +129,7 @@ utils.plot_latent(x_umaps, annos = [x["Cell_State"].values.squeeze() for x in me
 import importlib 
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, Kl divergence has a huge effect.
-lambs = [1e-3, 1.0, 0.1, 1, 1e-5]
+lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
 # lambs = [1e-2, 1.0, 0.1, 1, 1e-5]
 Ks = [12, 4]
 
@@ -206,7 +209,7 @@ for batch, _ in enumerate(datasets_array):
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-comment = f'plots_{Ks}_{lambs[1]}_{lambs[2]}_{lambs[3]}_{lambs[4]}/'
+comment = f'plots_{Ks}_{lambs}/'
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
@@ -214,7 +217,7 @@ if not os.path.exists(result_dir + comment):
 # utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "separate", axis_label = "UMAP", figsize = (10,140), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15,10), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
 utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15,10), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
-utils.plot_latent(zs = z_cs_umaps, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15, 7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (15, 10), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (7,5), save = (result_dir + comment+"diff_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (7,5), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 1, alpha = 0.5)
 

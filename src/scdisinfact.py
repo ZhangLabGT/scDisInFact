@@ -457,8 +457,8 @@ class scdisinfact(nn.Module):
             # create train loader 
             self.train_loaders.append(DataLoader(dataset, batch_size = self.batch_size, shuffle = True))
             # create test loader
-            # prevent the case when the dataset is too large
-            cutoff = 1000
+            # prevent the case when the dataset is too large, may not cover all the conditions if too small
+            cutoff = 10000
             if len(dataset) > cutoff:
                 print("test dataset shrink to {:d}".format(cutoff))
                 idx = torch.randperm(n = cutoff)[:cutoff]
@@ -582,7 +582,7 @@ class scdisinfact(nn.Module):
                     # NOTE: calculate the group lasso for common encoder, we corrently don't need to use group lasso
                     loss_gl_c += 0 # loss_func.grouplasso(self.Enc_c.fc.fc_layers[0].linear.weight)
                 
-                # calculate global mmd loss
+                # calculate global mmd loss, between batches and conditions
                 loss_mmd = loss_func.maximum_mean_discrepancy(xs = torch.cat(z_cs["z_mu"], dim = 0), batch_ids = torch.cat(z_cs["batch_id"], dim = 0), device = self.device)
                 # total loss
                 loss = loss_recon + self.lambs[0] * loss_mmd + self.lambs[4] * loss_kl + self.lambs[3] * loss_gl_c

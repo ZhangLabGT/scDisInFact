@@ -105,7 +105,7 @@ importlib.reload(scdisinfact)
 # contr_loss = loss_func.SupervisedContrastiveLoss(temperature = 0.07)
 
 # reconstruction, mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
 # lambs = [1, 0.00, 0.0, 0.0, 0, 0, 0.0]
 Ks = [12, 4]
 
@@ -231,7 +231,6 @@ import importlib
 importlib.reload(scdisinfact)
 # reconstruction, mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [0.01, 1.0, 0.1, 1, 1e-5]
-# lambs = [1, 0.00, 0.0, 0.0, 0, 0, 0.0]
 Ks = [12, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)

@@ -1,4 +1,5 @@
 # In[]
+from random import random
 import sys, os
 import torch
 import numpy as np 
@@ -15,11 +16,13 @@ import utils
 import bmk
 
 import anndata as ad
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
 import seaborn
+import warnings
+warnings.filterwarnings('ignore')
 
 def show_values_on_bars(axs):
     def _show_on_single_plot(ax):        
@@ -78,23 +81,27 @@ simulated_lists = [
 
 
 # In[]
-this_simulated_dir = simulated_lists[eval(sys.argv[1])]
+this_simulated_dir = simulated_lists[-1]
 # this_simulated_dir = simulated_lists[-1]
-result_dir = './simulated/'+this_simulated_dir + "/"
+result_dir = './simulated/two_cond/'+this_simulated_dir + "/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
-path = r'../data/simulated/' + this_simulated_dir + '/'
+path = '../data/simulated/two_cond/' + this_simulated_dir + '/'
 n_batches = 6
 counts_rnas = []
 labels = []
-conditions = []
+conditions1 = []
+conditions2 = []
 batches = []
 datasets = []
 batch_list = [1, 2, 3, 4, 5, 6]
 label_annos = []
 label_batches = []
-label_conditions = []
+label_conditions1 = []
+label_conditions2 = []
+
+np.random.seed(0)
 # for batch_id in range(1, n_batches + 1):
 for batch_id in batch_list:
     counts_rnas.append(pd.read_csv(path + f'GxC{batch_id}.txt', sep = "\t", header = None).values.T)
@@ -105,125 +112,166 @@ for batch_id in batch_list:
     label_batches.append(np.array(['batch ' + str(batch_id)] * labels[-1].shape[0]))
     batches.append(np.array([batch_id] * labels[-1].shape[0]))
 
-    label_conditions.append(np.array(['condition '+str(int((batch_id - 1)/2))] * labels[-1].shape[0]))
-    conditions.append(np.array([int((batch_id - 1)/2)] * labels[-1].shape[0]))
-    datasets.append(scdisinfact.dataset(counts = counts_rnas[-1], anno = labels[-1], diff_label = conditions[-1], batch_id = batches[-1]))
+    # shuffle
+    # random_condition = np.random.choice(a = np.array([0, 1, 2]), size = 1)[0]
+    # label_conditions.append(np.array(['condition '+str(random_condition)] * labels[-1].shape[0]))
+    # conditions.append(np.array([random_condition] * labels[-1].shape[0]))
+    # original
+    if batch_id in [1, 2]:
+        label_conditions1.append(np.array(['condition 0'] * labels[-1].shape[0]))
+        conditions1.append(np.array([0] * labels[-1].shape[0]))
+    elif batch_id in [3, 4]:
+        label_conditions1.append(np.array(['condition 1'] * labels[-1].shape[0]))
+        conditions1.append(np.array([1] * labels[-1].shape[0]))    
+    else:
+        label_conditions1.append(np.array(['condition 2'] * labels[-1].shape[0]))
+        conditions1.append(np.array([2] * labels[-1].shape[0]))
+
+    if batch_id in [1, 2, 3]:
+        label_conditions2.append(np.array(['condition 0'] * labels[-1].shape[0]))
+        conditions2.append(np.array([0] * labels[-1].shape[0]))
+    else:
+        label_conditions2.append(np.array(['condition 1'] * labels[-1].shape[0]))
+        conditions2.append(np.array([1] * labels[-1].shape[0]))
+        
+    datasets.append(scdisinfact.dataset(counts = counts_rnas[-1], anno = labels[-1], diff_labels = [conditions1[-1], conditions2[-1]], batch_id = batches[-1]))
     print(batch_id, 'Finished')
 
 # In[]
-# # check the visualization before integration
-# umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
-# counts_norms = []
-# annos = []
-# conditions = []
-# for batch in range(n_batches):
-#     counts_norms.append(datasets[batch].counts_norm)
-#     annos.append(datasets[batch].anno)
-#     conditions.append(datasets[batch].diff_label)
-# x_umap = umap_op.fit_transform(np.concatenate(counts_norms, axis = 0))
-# # separate into batches
-# x_umaps = []
-# for batch in range(n_batches):
-#     if batch == 0:
-#         start_pointer = 0
-#         end_pointer = start_pointer + counts_norms[batch].shape[0]
-#         x_umaps.append(x_umap[start_pointer:end_pointer,:])
-#     elif batch == (n_batches - 1):
-#         start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-#         x_umaps.append(x_umap[start_pointer:,:])
-#     else:
-#         start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-#         end_pointer = start_pointer + counts_norms[batch].shape[0]
-#         x_umaps.append(x_umap[start_pointer:end_pointer,:])
+# check the visualization before integration
+umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
+counts_norms = []
+annos = []
+conditions = []
+for batch in range(n_batches):
+    counts_norms.append(datasets[batch].counts_norm)
+    annos.append(datasets[batch].anno)
+    conditions.append(datasets[batch].diff_labels[0])
+x_umap = umap_op.fit_transform(np.concatenate(counts_norms, axis = 0))
+# separate into batches
+x_umaps = []
+for batch in range(n_batches):
+    if batch == 0:
+        start_pointer = 0
+        end_pointer = start_pointer + counts_norms[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+    elif batch == (n_batches - 1):
+        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
+        x_umaps.append(x_umap[start_pointer:,:])
+    else:
+        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
+        end_pointer = start_pointer + counts_norms[batch].shape[0]
+        x_umaps.append(x_umap[start_pointer:end_pointer,:])
 
-# save_file = None
+save_file = None
 
-# utils.plot_latent(x_umaps, annos = annos, mode = "modality", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umaps, annos = annos, mode = "modality", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
-# utils.plot_latent(x_umaps, annos = conditions, mode = "joint", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umaps, annos = conditions, mode = "joint", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
-# utils.plot_latent(x_umaps, annos = annos, mode = "separate", save = None, figsize = (10,70), axis_label = "Latent")
+utils.plot_latent(x_umaps, annos = annos, mode = "separate", save = None, figsize = (10,40), axis_label = "Latent")
 
 # In[] training the model
-m, gamma = 0.3, 0.1
-# reconstruction, mmd, cross_entropy, contrastive, group_lasso
-lambs = [1, 0.5, 10, 0.1, 0.1]
-contr_loss = loss_func.CircleLoss(m = m, gamma = gamma)
-# contr_loss = SupervisedContrastiveLoss()
-model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, contr_loss = contr_loss, seed = 0, device = device)
+import importlib 
+importlib.reload(scdisinfact)
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [0.01, 1.0, 0.1, 1, 1e-5]
+# lambs = [0.01, 1.0, 0.0, 1, 1e-5]
+Ks = [12, 4, 4]
+# model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
 # losses = model1.train(nepochs = 100)
+model1 = scdisinfact.scdisinfact(datasets = datasets, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
+losses = model1.train(nepochs = 100, recon_loss = "ZINB")
 # torch.save(model1.state_dict(), result_dir + "model.pth")
-model1.load_state_dict(torch.load(result_dir + "model.pth"))
+# model1.load_state_dict(torch.load(result_dir + "model.pth"))
 
 # In[] Plot the loss curve
-# loss_test, loss_recon, loss_mmd, loss_class, loss_gl_d, loss_gl_c = losses
+plt.rcParams["font.size"] = 20
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+iters = np.arange(1, len(loss_tests)+1)
 
-# iters = np.arange(1, len(loss_gl_c)+1)
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_gl_c, "-*", label = 'Group Lasso common')
-# ax.plot(iters, loss_gl_d, "-*", label = 'Group Lasso diff')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_gl_c):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-# for i, j in zip(iters, loss_gl_d):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_tests, "-*", label = 'Total loss')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
 
-# fig.savefig(result_dir+'/gl_both_ent_loss.png', bbox_inches = "tight")
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 # In[] Plot results
 z_cs = []
 z_ds = []
 zs = []
 
-for x in datasets:
+for batch_id, dataset in enumerate(datasets):
     with torch.no_grad():
-        z_c = model1.Enc_c(x.counts_stand.to(model1.device))
-        z_d = model1.Enc_d(x.counts_stand.to(model1.device))
-    z_cs.append(z_c.cpu().detach().numpy())
-    z_ds.append(z_d.cpu().detach().numpy())
-    zs.append(torch.cat((z_c, z_d), dim = 1).cpu().detach().numpy())
+        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, torch.FloatTensor([[batch_id]]).expand(dataset.counts_stand.shape[0], 1)], dim = 1).to(model1.device))
+        z_ds.append([])
+        for Enc_d in model1.Enc_ds:
+            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, torch.FloatTensor([[batch_id]]).expand(dataset.counts_stand.shape[0], 1)], dim = 1).to(model1.device))
+            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_cs.append(z_c.cpu().detach().numpy())
+        zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 
 # UMAP
 umap_op = UMAP(min_dist = 0.1, random_state = 0)
 z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
-z_ds_umap = umap_op.fit_transform(np.concatenate(z_ds, axis = 0))
+z_ds_umap = []
+z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
+z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[1] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
-z_ds_umaps = []
+z_ds_umaps = [[], []]
 z_cs_umaps = []
 zs_umaps = []
 for batch in range(n_batches):
     if batch == 0:
         start_pointer = 0
         end_pointer = start_pointer + zs[batch].shape[0]
-        z_ds_umaps.append(z_ds_umap[start_pointer:end_pointer,:])
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
+        z_ds_umaps[1].append(z_ds_umap[1][start_pointer:end_pointer,:])
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
     elif batch == (n_batches - 1):
         start_pointer = start_pointer + zs[batch - 1].shape[0]
-        z_ds_umaps.append(z_ds_umap[start_pointer:,:])
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:,:])
+        z_ds_umaps[1].append(z_ds_umap[1][start_pointer:,:])
         z_cs_umaps.append(z_cs_umap[start_pointer:,:])
         zs_umaps.append(zs_umap[start_pointer:,:])
 
     else:
         start_pointer = start_pointer + zs[batch - 1].shape[0]
         end_pointer = start_pointer + zs[batch].shape[0]
-        z_ds_umaps.append(z_ds_umap[start_pointer:end_pointer,:])
+        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
+        z_ds_umaps[1].append(z_ds_umap[1][start_pointer:end_pointer,:])
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
-comment = r'circle_{}_{}_{}_'.format(m, gamma, lambs[-1])
+
+comment = f'plots_{Ks}_{lambs}/'
+if not os.path.exists(result_dir + comment):
+    os.makedirs(result_dir + comment)
 
 utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"time_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_1_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = label_conditions2, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_1_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_1_batch.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_2_celltypes.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_conditions1, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_2_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_2_batch.png".format()) if result_dir else None, markerscale = 6, s = 5)
 
-utils.plot_latent(zs = zs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = zs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = zs_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)   
+# utils.plot_latent(zs = zs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
+# utils.plot_latent(zs = zs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_batches.png".format()) if result_dir else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = zs_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"all_dims_condition.png".format()) if result_dir else None, markerscale = 6, s = 5)   
 
 
 # In[] Calculate AUPRC score
