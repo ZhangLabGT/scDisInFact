@@ -1,47 +1,34 @@
 # In[]
-from random import random
 import sys, os
 import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("../src")
-import torch.optim as opt
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
-from torch.autograd import Variable
 import scdisinfact
-import loss_function as loss_func
 import utils
-import bmk
 
-import anndata as ad
 device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
 from sklearn.decomposition import PCA
-import seaborn
 import scipy.sparse as sparse
 import warnings
 warnings.filterwarnings('ignore')
-
-from anndata import AnnData
 
 # In[] Read in the dataset, filtering out the batches that we don't need
 # here we use cohort 2 because cohort 2 has little batch effect between control and covid-19 patient, whereas cohort 1 has large batch effect between control and covid-19 patient. 
 # Since control and covid-19 are from completely different batches (control is publically available dataset), it is hard to guarantee the removal of batch effect between control and covid-19 patient
 # In addition, the control of cohort 1 doesn't have sex information
-data_dir = "../data/covid19-3/Rhapsody_pbmc/"
+data_dir = "../data/covid19-3/Rhapsody_pbmc/raw/"
 result_dir = "covid19-3/Rhapsody_pbmc/raw/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
 # raw dataset
-genes = np.loadtxt(data_dir + "raw/genes.csv", dtype = np.object)
-# NOTE: orig.ident: patient id _ timepoint (should be batches), Patient: patient id, Timepoint: timepoint of sampling, Pseudotime_name/Pseudotime: severity of the disease (should be used as condition)
-meta_cells = pd.read_csv(data_dir + "raw/meta_cells.csv", sep = "\t")
-counts_rna = sparse.load_npz(data_dir + "raw/counts_rna.npz")
+genes = np.loadtxt(data_dir + "genes.csv", dtype = np.object)
+meta_cells = pd.read_csv(data_dir + "meta_cells.csv", sep = "\t")
+counts_rna = sparse.load_npz(data_dir + "counts_rna.npz")
 
 # sampleID should be the samples/batches, one donor has 1/2 samples (early, late)
 batch_ids, batch_names = pd.factorize(meta_cells["sampleID"].values.squeeze())
@@ -96,13 +83,12 @@ import importlib
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [1e-3, 1.0, 0.1, 1, 1e-6]
-# lambs = [0.01, 1.0, 0.0, 1, 1e-5]
 Ks = [12, 4, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
 losses = model1.train(nepochs = 1000, recon_loss = "NB")
-torch.save(model1.state_dict(), result_dir + "model.pth")
-model1.load_state_dict(torch.load(result_dir + "model.pth"))
+torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20

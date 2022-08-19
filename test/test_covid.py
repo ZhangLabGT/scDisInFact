@@ -136,13 +136,12 @@ import importlib
 importlib.reload(scdisinfact)
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
-# lambs = [0.01, 1.0, 0.0, 1, 1e-5]
 Ks = [12, 4, 4]
 
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
 losses = model1.train(nepochs = 300, recon_loss = "NB")
-# torch.save(model1.state_dict(), result_dir + "model.pth")
-# model1.load_state_dict(torch.load(result_dir + "model.pth"))
+torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20

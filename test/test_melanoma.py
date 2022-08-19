@@ -236,8 +236,8 @@ Ks = [12, 4]
 model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
 # model1 = scdisinfact.scdisinfact_ae(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
 losses = model1.train(nepochs = 300)
-torch.save(model1.state_dict(), result_dir + "model_sub.pth")
-model1.load_state_dict(torch.load(result_dir + "model_sub.pth"))
+torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
