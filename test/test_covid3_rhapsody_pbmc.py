@@ -159,7 +159,7 @@ for batch, _ in enumerate(datasets_array):
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-comment = f'plots_{Ks}_{lambs[1]}_{lambs[2]}_{lambs[3]}_{lambs[4]}/'
+comment = f"plots_{Ks}_{lambs}/"
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 

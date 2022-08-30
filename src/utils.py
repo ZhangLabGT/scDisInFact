@@ -1,6 +1,4 @@
-from pickle import TRUE
 import matplotlib.pyplot as plt
-import scanpy as sc
 from umap import UMAP
 import matplotlib.pyplot as plt
 from matplotlib import rcParams

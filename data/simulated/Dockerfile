@@ -23,10 +23,12 @@
 # sudo docker build -f Dockerfile -t symsim .
 # sudo docker run -v xxxxx:xxxxx [-it] [--rm] symsim
 
-FROM symsim:latest
+FROM ziqipeter/symsim:latest
 # run script
-RUN mkdir /symsim/
-COPY simulation_condition.R /symsim/simulation_condition.R
-CMD Rscript /symsim/simulation_condition.R
+RUN mkdir /symsim2/
+COPY simulation_condition_impute.R /symsim_test/simulation_condition_impute.R
+CMD Rscript /symsim_test/simulation_condition_impute.R
+# sudo docker build -f Dockerfile -t symsim_test .
+# sudo docker run -v /localscratch/ziqi/scDisInFact/data/simulated/imputation_10000_500_0.4_20_8_new:/symsim_test/dataset --rm symsim_test &
 
 

@@ -181,7 +181,7 @@ Ks = [12, 4, 4]
 # model1 = scdisinfact.scdisinfact_ae(datasets = datasets, Ks = [12, 4, 4], batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs[0:5] + [lambs[6]], contr_loss = contr_loss, seed = 0, device = device)
 # losses = model1.train(nepochs = 100)
 model1 = scdisinfact.scdisinfact(datasets = datasets, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 100, recon_loss = "ZINB")
+losses = model1.train(nepochs = 100, recon_loss = "NB")
 # torch.save(model1.state_dict(), result_dir + "model.pth")
 # model1.load_state_dict(torch.load(result_dir + "model.pth"))
 

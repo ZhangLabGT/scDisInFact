@@ -26,7 +26,7 @@ class FC(nn.Module):
                             collections.OrderedDict(
                                 [
                                     ("linear", nn.Linear(n_in, n_out) if self.use_bias else nn.Linear(n_in, n_out, bias = False),),
-                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001) if self.use_batch_norm else None,),
+                                    ("batchnorm", nn.BatchNorm1d(n_out, momentum=0.01, eps=0.001, track_running_stats = False) if self.use_batch_norm else None,),
                                     ("act", self.act_func),
                                     ("dropout", nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0 else None,),
                                 ]
@@ -159,7 +159,8 @@ class Encoder_var(nn.Module):
                 features = features[:-1],
                 dropout_rate = dropout_rate,
                 negative_slope = negative_slope,
-                use_bias = True
+                use_bias = True,
+                use_batch_norm = False
             )
         self.mean_layer = nn.Linear(features[-2], features[-1])
         self.var_layer = nn.Linear(features[-2], features[-1])
