@@ -29,6 +29,6 @@ RUN mkdir /symsim2/
 COPY simulation_condition_impute.R /symsim_test/simulation_condition_impute.R
 CMD Rscript /symsim_test/simulation_condition_impute.R
 # sudo docker build -f Dockerfile -t symsim_test .
-# sudo docker run -v /localscratch/ziqi/scDisInFact/data/simulated/imputation_10000_500_0.4_20_8_new:/symsim_test/dataset --rm symsim_test &
+# sudo docker run -v /localscratch/ziqi/scDisInFact/data/simulated/imputation_10000_500_0.3_20_1:/symsim_test/dataset --rm symsim_test2 &
 
 

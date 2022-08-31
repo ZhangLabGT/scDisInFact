@@ -485,21 +485,21 @@ class scdisinfact(nn.Module):
 
         # create model
         # encoder for common biological factor, + 1 here refers to the one batch ID
-        self.Enc_c = model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["common_factor"]], dropout_rate = 0, negative_slope = 0).to(self.device)
+        self.Enc_c = model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["common_factor"]], dropout_rate = 0.0, negative_slope = 0).to(self.device)
         # encoder for time factor, + 1 here refers to the one batch ID
         self.Enc_ds = nn.ModuleList([])
         for idx in range(self.n_diff_factors):
-            self.Enc_ds.append(model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["diff_factors"][idx]], dropout_rate = 0, negative_slope = 0).to(self.device))
+            self.Enc_ds.append(model.Encoder_var(features = [self.ngenes + 1, 256, 64, self.Ks["diff_factors"][idx]], dropout_rate = 0.0, negative_slope = 0).to(self.device))
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
         # use a linear classifier as stated in the paper
         self.classifiers = nn.ModuleList([])
         for idx in range(self.n_diff_factors):
             self.classifiers.append(nn.Linear(self.Ks["diff_factors"][idx], len(self.diff_labels[idx])).to(self.device))
         # NOTE: reconstruct the original data, use all latent dimensions as input
-        self.Dec = model.Decoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]) + 1, 64, 256, self.ngenes], dropout_rate = 0, negative_slope = 0).to(self.device)
+        self.Dec = model.Decoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]) + 1, 64, 256, self.ngenes], dropout_rate = 0.0, negative_slope = 0).to(self.device)
         
         # Discriminator for factor vae
-        self.disc = model.Encoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), 16, 8, 2], dropout_rate = 0, negative_slope = 0).to(self.device)
+        self.disc = model.Encoder(features = [self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), 16, 8, 2], dropout_rate = 0.0, negative_slope = 0).to(self.device)
 
         # parameter when training the common biological factor
         self.param_common = nn.ModuleDict({"encoder_common": self.Enc_c, "decoder": self.Dec})
@@ -523,6 +523,7 @@ class scdisinfact(nn.Module):
 
     def train_model(self, nepochs = 50, recon_loss = "ZINB"):
         lamb_pi = 1e-5
+        best_loss = 1e3
         # TODO: in the vanilla vae, beta should be 1, in beta-vae, beta >1, the visualization for both cases are not good. Try beta with smaller value
         ce_loss = nn.CrossEntropyLoss(reduction = 'mean')
         contr_loss = loss_func.SupConLoss(temperature=0.07)
@@ -878,8 +879,26 @@ class scdisinfact(nn.Module):
                         loss_kl_tests.append(loss_kl_test.item())
                         loss_gl_d_tests.append(loss_gl_d_test.item())
                         loss_gl_c_tests.append(loss_gl_c_test.item())
-                        loss_tc_tests.append(loss_tc_test_disc.item())
-
+                        loss_tc_tests.append(loss_tc_test_disc.item())                
+                        
+                        # update for early stopping 
+                        if loss_test.item() < best_loss:
+                            
+                            best_loss = loss_test.item()
+                            torch.save(self.state_dict(), f'../check_points/model.pt')
+                            trigger = 0
+                        else:
+                            trigger += 1
+                            print(trigger)
+                            if trigger % 5 == 0:
+                                self.opt.param_groups[0]['lr'] *= 0.5
+                                print('Epoch: {}, shrink lr to {:.4f}'.format(epoch, self.opt.param_groups[0]['lr']))
+                                if self.opt.param_groups[0]['lr'] <= 1e-6:
+                                    break
+                                else:
+                                    self.load_state_dict(torch.load(f'../check_points/model.pt'))
+                                    trigger = 0                            
+                        
         return loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests
 
     def train_norecon(self, nepochs = 50, recon_loss = "ZINB"):
