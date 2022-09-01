@@ -95,12 +95,12 @@ for batch_id, batch_name in enumerate(batch_names):
 
     dataset_train = scdisinfact.dataset(counts = count_batch[train_idx,:], 
                                         anno = anno_batch[train_idx], 
-                                        diff_labels = [diff_labels_batch[0][train_idx], diff_labels_batch[1][train_idx]], 
+                                        diff_labels = [diff_labels_batch[0][train_idx]], 
                                         batch_id = batch_ids_batch[train_idx])
 
     dataset_test = scdisinfact.dataset(counts = count_batch[test_idx,:], 
                                         anno = anno_batch[test_idx], 
-                                        diff_labels = [diff_labels_batch[0][test_idx], diff_labels_batch[1][test_idx]], 
+                                        diff_labels = [diff_labels_batch[0][test_idx]], 
                                         batch_id = batch_ids_batch[test_idx])
 
     datasets_train.append(dataset_train)
@@ -113,7 +113,7 @@ for batch_id, batch_name in enumerate(batch_names):
 import importlib 
 importlib.reload(scdisinfact)
 start_time = time.time()
-reg_mmd_comm = 1e-2
+reg_mmd_comm = 5e-2
 reg_mmd_diff = 1e-2
 reg_gl = 1
 reg_tc = 0.1
@@ -121,11 +121,11 @@ reg_class = 1
 reg_kl = 1e-5
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
-Ks = [8, 4, 4]
+Ks = [8, 4]
 nepochs = 50
 interval = 10
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(datasets = datasets_train, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+model = scdisinfact.scdisinfact(datasets = datasets_train, Ks = Ks, batch_size = 64, interval = interval, lr = 1e-3, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
