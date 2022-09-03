@@ -2019,6 +2019,7 @@ class scdisinfact_scvi(nn.Module):
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
         # number of diff factors
         self.n_diff_factors = len(self.Ks["diff_factors"])
+        self.n_batches = len(datasets)
 
         self.batch_size = batch_size
         self.interval = interval
