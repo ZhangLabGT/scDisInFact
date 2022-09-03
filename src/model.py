@@ -1,7 +1,11 @@
+import sys, os
 import torch
 import torch.nn as nn
 import collections
 import torch.nn.functional as F
+
+sys.path.append(".")
+from scvi_layers import *
 
 class FC(nn.Module):
     def __init__(self, features = [1000, 500, 500], use_batch_norm = True, dropout_rate = 0.0, negative_slope = 0.0, use_bias = True, act_func_type='relu'):
@@ -116,7 +120,8 @@ class OutputLayer(nn.Module):
         self.output_size = features[1]
         self.last_hidden = features[0]
         self.zero_inflation = zero_inflation
-        self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), MeanAct())
+        # self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), MeanAct())
+        self.mean_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), nn.Softplus())
         # ! Parameter Pi needs Sigmoid as activation func
         if self.zero_inflation: 
             self.pi_layer = nn.Sequential(nn.Linear(self.last_hidden, self.output_size), nn.Sigmoid())

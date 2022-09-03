@@ -53,14 +53,14 @@ for batch_id in range(6):
     # batch labels
     label_batches.append(np.array(['batch ' + str(batch_id)] * counts[-1].shape[0]))
     
-    if batch_id in [1, 2]:
+    if batch_id in [0,1]:
         label_cond1.append(np.array(["ctrl"] * counts[-1].shape[0]))
-    elif batch_id in [3,4]:
+    elif batch_id in [2,3]:
         label_cond1.append(np.array(["stim1"] * counts[-1].shape[0]))
     else:
         label_cond1.append(np.array(["stim2"] * counts[-1].shape[0]))
 
-    if batch_id in [1,2,3]:
+    if batch_id in [0,1,2]:
         label_cond2.append(np.array(["age_group1"] * counts[-1].shape[0])) 
     else:
         label_cond2.append(np.array(["age_group2"] * counts[-1].shape[0]))       
@@ -95,12 +95,12 @@ for batch_id, batch_name in enumerate(batch_names):
 
     dataset_train = scdisinfact.dataset(counts = count_batch[train_idx,:], 
                                         anno = anno_batch[train_idx], 
-                                        diff_labels = [diff_labels_batch[0][train_idx]], 
+                                        diff_labels = [diff_labels_batch[0][train_idx], diff_labels_batch[1][train_idx]], 
                                         batch_id = batch_ids_batch[train_idx])
 
     dataset_test = scdisinfact.dataset(counts = count_batch[test_idx,:], 
                                         anno = anno_batch[test_idx], 
-                                        diff_labels = [diff_labels_batch[0][test_idx]], 
+                                        diff_labels = [diff_labels_batch[0][test_idx], diff_labels_batch[1][test_idx]], 
                                         batch_id = batch_ids_batch[test_idx])
 
     datasets_train.append(dataset_train)
@@ -113,7 +113,7 @@ for batch_id, batch_name in enumerate(batch_names):
 import importlib 
 importlib.reload(scdisinfact)
 start_time = time.time()
-reg_mmd_comm = 5e-2
+reg_mmd_comm = 1e-2
 reg_mmd_diff = 1e-2
 reg_gl = 1
 reg_tc = 0.1
@@ -121,45 +121,55 @@ reg_class = 1
 reg_kl = 1e-5
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
-Ks = [8, 4]
+Ks = [8, 4, 4]
 nepochs = 50
 interval = 10
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
 model = scdisinfact.scdisinfact(datasets = datasets_train, Ks = Ks, batch_size = 64, interval = interval, lr = 1e-3, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, seed = 0, device = device)
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
 # train_joint is more efficient, but does not work as well compared to train
 model.train()
-losses = model.train_contr(nepochs = nepochs, recon_loss = "NB")
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
 end_time = time.time()
 print("time cost: {:.2f}".format(end_time - start_time))
 
 torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
-model.eval()
+_ = model.eval()
 
 # In[] Plot train results
 z_cs = []
 z_ds = []
 zs = []
+d_preds = []
+targets = []
 
 loss_class = 0
+loss_contr = 0
 loss_recon = 0
 ce_loss = torch.nn.CrossEntropyLoss(reduction = 'mean')
+contr_loss = scdisinfact.loss_func.CircleLoss(m=0.25, gamma=80)
 
-for batch_id, dataset in enumerate(datasets_train):
-    with torch.no_grad():
-        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
+with torch.no_grad():
+    for batch_id, dataset in enumerate(datasets_train):
+        d_preds.append([])
+        targets.append([])
         z_ds.append([])
+        
+        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
         
         for condi, (Enc_d, classifier) in enumerate(zip(model.Enc_ds, model.classifiers)):
             z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
-    
             # check classification accuracy
             d_pred = classifier(z_d)
-            loss_class += ce_loss(input = d_pred, target = dataset.diff_labels[condi].to(model.device))
+            target = dataset.diff_labels[condi].to(model.device)            
+
+            z_ds[-1].append(z_d.cpu().detach().numpy())
+            d_preds[-1].append(d_pred)
+            targets[-1].append(target)
 
         mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]] + [dataset.batch_id[:,None].to(model.device)], dim = 1))
 
@@ -168,9 +178,12 @@ for batch_id, dataset in enumerate(datasets_train):
 
         loss_recon += scdisinfact.loss_func.NB(theta = theta, scale_factor = dataset.size_factor.to(model.device), device = model.device).loss(y_true = dataset.counts.to(model.device), y_pred = mu)
 
-
-print("loss classification on train dataset: {:.5f}".format(loss_class.item()))        
-print("loss likelihood on train dataset: {:.5f}".format(loss_recon.item()))  
+    for diff_factor in range(model.n_diff_factors):
+        loss_class += ce_loss(input = torch.cat([d_pred[diff_factor] for d_pred in d_preds], dim = 0), target = torch.cat([target[diff_factor] for target in targets], dim = 0))
+        loss_contr += contr_loss(torch.nn.functional.normalize(torch.cat([torch.tensor(z_d[diff_factor], device = model.device) for z_d in z_ds], dim = 0)), torch.cat([target[diff_factor] for target in targets], dim = 0))
+    print("loss classification on train dataset: {:.5f}".format(loss_class.item()))
+    print("loss contrastive on train dataset: {:.5f}".format(loss_contr.item()))
+    print("loss likelihood on train dataset: {:.5f}".format(loss_recon.item()))  
 
 # UMAP
 umap_op = UMAP(min_dist = 0.1, random_state = 0)
@@ -229,23 +242,32 @@ utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.diff_labels[1] for datase
 z_cs = []
 z_ds = []
 zs = []
+d_preds = []
+targets = []
 
 loss_class = 0
+loss_contr = 0
 loss_recon = 0
 ce_loss = torch.nn.CrossEntropyLoss(reduction = 'mean')
+contr_loss = scdisinfact.loss_func.CircleLoss(m=0.25, gamma=80)
 
-for batch_id, dataset in enumerate(datasets_test):
-    with torch.no_grad():
-        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
+with torch.no_grad():
+    for batch_id, dataset in enumerate(datasets_test):
+        d_preds.append([])
+        targets.append([])
         z_ds.append([])
+        
+        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
         
         for condi, (Enc_d, classifier) in enumerate(zip(model.Enc_ds, model.classifiers)):
             z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
-    
             # check classification accuracy
             d_pred = classifier(z_d)
-            loss_class += ce_loss(input = d_pred, target = dataset.diff_labels[condi].to(model.device))
+            target = dataset.diff_labels[condi].to(model.device)            
+
+            z_ds[-1].append(z_d.cpu().detach().numpy())
+            d_preds[-1].append(d_pred)
+            targets[-1].append(target)
 
         mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]] + [dataset.batch_id[:,None].to(model.device)], dim = 1))
 
@@ -254,8 +276,12 @@ for batch_id, dataset in enumerate(datasets_test):
 
         loss_recon += scdisinfact.loss_func.NB(theta = theta, scale_factor = dataset.size_factor.to(model.device), device = model.device).loss(y_true = dataset.counts.to(model.device), y_pred = mu)
 
-print("loss classification on test dataset: {:.5f}".format(loss_class.item()))  
-print("loss likelihood on test dataset: {:.5f}".format(loss_recon.item()))  
+    for diff_factor in range(model.n_diff_factors):
+        loss_class += ce_loss(input = torch.cat([d_pred[diff_factor] for d_pred in d_preds], dim = 0), target = torch.cat([target[diff_factor] for target in targets], dim = 0))
+        loss_contr += contr_loss(torch.nn.functional.normalize(torch.cat([torch.tensor(z_d[diff_factor], device = model.device) for z_d in z_ds], dim = 0)), torch.cat([target[diff_factor] for target in targets], dim = 0))
+    print("loss classification on test dataset: {:.5f}".format(loss_class.item()))
+    print("loss contrastive on test dataset: {:.5f}".format(loss_contr.item()))
+    print("loss likelihood on test dataset: {:.5f}".format(loss_recon.item()))  
 
         
 # UMAP
@@ -369,7 +395,7 @@ for batch in range(n_batches * 2):
         z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
         zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
 
-    elif batch == (n_batches - 1):
+    elif batch == (2 * n_batches - 1):
         start_pointer = start_pointer + zs[batch - 1].shape[0]
         z_ds_umaps[0].append(z_ds_umap[0][start_pointer:,:])
         z_ds_umaps[1].append(z_ds_umap[1][start_pointer:,:])

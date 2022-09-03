@@ -15,7 +15,7 @@ device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
 # In[]
 sigma = 0.4
-n_diff_genes = 100
+n_diff_genes = 20
 diff = 2
 ngenes = 500
 ncells_total = 10000 
@@ -79,37 +79,98 @@ for batch_id, batch_name in enumerate(batch_names):
                                             batch_id = batch_ids[batch_ids == batch_id]))
 
 
-'''
-# check the visualization before integration
-umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
+# In[]
+sigma = 0.4
+n_diff_genes = 20
+diff = 2
+ngenes = 500
+ncells_total = 10000 
+n_batches = 6
 
-counts_norms = []
-for batch in range(n_batches):
-    counts_norms.append(datasets[batch].counts_norm)
+# permute = True
+permute = False
 
-x_umap = umap_op.fit_transform(np.concatenate(counts_norms, axis = 0))
-# separate into batches
-x_umaps = []
-for batch in range(n_batches):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + counts_norms[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-    elif batch == (n_batches - 1):
-        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
+# data_dir = f"../data/simulated/two_cond/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+data_dir = f"../data/simulated/generalize_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+
+if permute:
+    result_dir = f"./simulated/generalization/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+else:
+    result_dir = f"./simulated/generalization/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+
+if not os.path.exists(result_dir):
+    os.makedirs(result_dir)
+
+counts = []
+# cell types
+label_annos = []
+# batch labels
+label_batches = []
+counts_gt = []
+label_cond1 = []
+label_cond2 = []
+np.random.seed(0)
+for batch_id in range(6):
+    # counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
+    counts.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}.txt', sep = "\t", header = None).values.T)
+    anno = pd.read_csv(data_dir + f'cell_label{batch_id + 1}.txt', sep = "\t", index_col = 0).values.squeeze()
+    # annotation labels
+    label_annos.append(np.array([('cell type '+str(i)) for i in anno]))
+    # batch labels
+    label_batches.append(np.array(['batch ' + str(batch_id)] * counts[-1].shape[0]))
+    
+    if batch_id in [1, 2]:
+        label_cond1.append(np.array(["ctrl"] * counts[-1].shape[0]))
+    elif batch_id in [3,4]:
+        label_cond1.append(np.array(["stim1"] * counts[-1].shape[0]))
     else:
-        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_norms[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+        label_cond1.append(np.array(["stim2"] * counts[-1].shape[0]))
 
-save_file = None
+    if batch_id in [1,2,3]:
+        label_cond2.append(np.array(["age_group1"] * counts[-1].shape[0])) 
+    else:
+        label_cond2.append(np.array(["age_group2"] * counts[-1].shape[0]))       
 
-utils.plot_latent(x_umaps, annos = label_annos, mode = "modality", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
 
-utils.plot_latent(x_umaps, annos = label_conditions, mode = "joint", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
-'''
+cond1_ids, cond1_names = pd.factorize(np.concatenate(label_cond1, axis = 0))
+cond2_ids, cond2_names = pd.factorize(np.concatenate(label_cond2, axis = 0))
+if permute: 
+    permute_ids = np.random.permutation(cond1_ids.shape[0])
+    cond1_ids = cond1_ids[permute_ids]
+    cond2_ids = cond2_ids[permute_ids]
 
+batch_ids, batch_names = pd.factorize(np.concatenate(label_batches, axis = 0))
+anno_ids, anno_names = pd.factorize(np.concatenate(label_annos, axis = 0))
+counts = np.concatenate(counts, axis = 0)
+
+datasets_train = []
+datasets_test = []
+np.random.seed(0)
+for batch_id, batch_name in enumerate(batch_names):
+    count_batch = counts[batch_ids == batch_id,:]
+    anno_batch = anno_ids[batch_ids == batch_id]
+    diff_labels_batch = [cond1_ids[batch_ids == batch_id], cond2_ids[batch_ids == batch_id]]
+    batch_ids_batch = batch_ids[batch_ids == batch_id]
+
+    # generate random indices
+    permute_idx = np.random.permutation(np.arange(count_batch.shape[0]))
+    train_idx = permute_idx[:int(0.8 * count_batch.shape[0])]
+    test_idx = permute_idx[int(0.8 * count_batch.shape[0]):]
+
+    dataset_train = scdisinfact.dataset(counts = count_batch[train_idx,:], 
+                                        anno = anno_batch[train_idx], 
+                                        diff_labels = [diff_labels_batch[0][train_idx]], 
+                                        batch_id = batch_ids_batch[train_idx])
+
+    dataset_test = scdisinfact.dataset(counts = count_batch[test_idx,:], 
+                                        anno = anno_batch[test_idx], 
+                                        diff_labels = [diff_labels_batch[0][test_idx]], 
+                                        batch_id = batch_ids_batch[test_idx])
+
+    datasets_train.append(dataset_train)
+    datasets_test.append(dataset_test)
+
+datasets = datasets_train 
 
 # In[] training the model
 # TODO: track the time usage and memory usage
