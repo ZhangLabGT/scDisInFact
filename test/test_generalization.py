@@ -159,19 +159,17 @@ with torch.no_grad():
         targets.append([])
         z_ds.append([])
         
-        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
-        
-        for condi, (Enc_d, classifier) in enumerate(zip(model.Enc_ds, model.classifiers)):
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
+        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+        for diff_factor in range(model.n_diff_factors):
             # check classification accuracy
-            d_pred = classifier(z_d)
-            target = dataset.diff_labels[condi].to(model.device)            
+            d_pred = model.classifiers[diff_factor](z_d[diff_factor])
+            target = dataset.diff_labels[diff_factor].to(model.device)            
 
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+            z_ds[-1].append(z_d[diff_factor].cpu().detach().numpy())
             d_preds[-1].append(d_pred)
             targets[-1].append(target)
 
-        mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]] + [dataset.batch_id[:,None].to(model.device)], dim = 1))
+        mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]], dim = 1), dataset.batch_id[:,None].to(model.device))
 
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
@@ -257,19 +255,17 @@ with torch.no_grad():
         targets.append([])
         z_ds.append([])
         
-        z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
-        
-        for condi, (Enc_d, classifier) in enumerate(zip(model.Enc_ds, model.classifiers)):
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model.device))
+        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+        for diff_factor in range(model.n_diff_factors):
             # check classification accuracy
-            d_pred = classifier(z_d)
-            target = dataset.diff_labels[condi].to(model.device)            
+            d_pred = model.classifiers[diff_factor](z_d[diff_factor])
+            target = dataset.diff_labels[diff_factor].to(model.device)            
 
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+            z_ds[-1].append(z_d[diff_factor].cpu().detach().numpy())
             d_preds[-1].append(d_pred)
             targets[-1].append(target)
 
-        mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]] + [dataset.batch_id[:,None].to(model.device)], dim = 1))
+        mu, pi, theta = model.Dec(torch.concat([z_c] + [torch.tensor(x).to(model.device) for x in z_ds[-1]], dim = 1), dataset.batch_id[:,None].to(model.device))
 
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
@@ -349,11 +345,8 @@ label_train_test = []
 
 for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, datasets_test)):
     with torch.no_grad():
-        z_c_train, _ = model.Enc_c(torch.concat([dataset_train.counts_stand, dataset_train.batch_id[:,None]], dim = 1).to(model.device))
-        z_ds.append([])
-        for Enc_d in model.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset_train.counts_stand, dataset_train.batch_id[:,None]], dim = 1).to(model.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_c_train, z_d, z, mu = model.test_model(counts = dataset_train.counts_stand.to(model.device), batch_ids = dataset_train.batch_id[:,None].to(model.device), print_stat = False)        
+        z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c_train.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
         label_annos.append(dataset_train.anno)
@@ -362,11 +355,8 @@ for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, dat
         label_cond2.append(dataset_train.diff_labels[1])
         label_train_test.append(np.array(len(dataset_train) * ["train"]))
 
-        z_c_test, _ = model.Enc_c(torch.concat([dataset_test.counts_stand, dataset_test.batch_id[:,None]], dim = 1).to(model.device))
-        z_ds.append([])
-        for Enc_d in model.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset_test.counts_stand, dataset_test.batch_id[:,None]], dim = 1).to(model.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_c_test, z_d, z, mu = model.test_model(counts = dataset_test.counts_stand.to(model.device), batch_ids = dataset_test.batch_id[:,None].to(model.device), print_stat = False)        
+        z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c_test.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
         label_annos.append(dataset_test.anno)

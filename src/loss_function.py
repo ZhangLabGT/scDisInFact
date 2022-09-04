@@ -4,7 +4,6 @@ import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
 from zinb import *
-from snnl import *
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def compute_pairwise_distances(x, y):

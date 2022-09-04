@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from torch.autograd import Variable
-import model
+import model_old
 import loss_function as loss_func
 from loss_function import CircleLoss, grouplasso
 import utils
