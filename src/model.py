@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, List, Optional
+from typing import Iterable
 import torch
 from torch import nn as nn
 import collections
