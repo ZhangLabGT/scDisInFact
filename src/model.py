@@ -197,7 +197,7 @@ class FCLayers(nn.Module):
 
 
 # Encoder
-class Encoder_scvi(nn.Module):
+class Encoder(nn.Module):
     """
     Encodes data of ``n_input`` dimensions into a latent space of ``n_output`` dimensions.
 
@@ -294,7 +294,7 @@ class Encoder_scvi(nn.Module):
 
 
 # Decoder
-class Decoder_scvi(nn.Module):
+class Decoder(nn.Module):
     def __init__(
         self,
         n_input: int,
@@ -333,7 +333,7 @@ class Decoder_scvi(nn.Module):
 
 
 class OutputLayer(nn.Module):
-    def __init__(self, features=[256, 1024], zero_inflation = True) -> None:
+    def __init__(self, features, zero_inflation = True) -> None:
         super().__init__()
         self.output_size = features[1]
         self.last_hidden = features[0]

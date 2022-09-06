@@ -94,11 +94,20 @@ def _reduce_mean(x):
     return torch.divide(torch.reduce_sum(x), nelem)
 
 def convert_label_to_similarity(normed_feature, label):
+    # print(torch.sum(normed_feature))
+    # print(normed_feature.shape)
+    # print(torch.sum(label))
+    # print(label.shape)
     similarity_matrix = normed_feature @ normed_feature.transpose(1, 0)
+    # print(torch.sum(similarity_matrix))
+    # print(similarity_matrix.shape)
     label_matrix = label.unsqueeze(1) == label.unsqueeze(0)
-
+    # print(torch.sum(label_matrix))
+    # print(label_matrix.shape)
     positive_matrix = label_matrix.triu(diagonal=1)
     negative_matrix = label_matrix.logical_not().triu(diagonal=1)
+    # print(positive_matrix)
+    # print(negative_matrix)
 
     
     similarity_matrix = similarity_matrix.view(-1)

@@ -4,7 +4,7 @@ import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("../src")
-import scdisinfact
+import scdisinfact as scdisinfact
 import utils
 from umap import UMAP
 import time
@@ -21,16 +21,15 @@ ngenes = 500
 ncells_total = 10000 
 n_batches = 6
 
-# permute = True
 permute = False
 
 # data_dir = f"../data/simulated/two_cond/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 data_dir = f"../data/simulated/generalize_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 if permute:
-    result_dir = f"./simulated/generalization/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+    result_dir = f"./simulated/generalization_2layers/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 else:
-    result_dir = f"./simulated/generalization/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+    result_dir = f"./simulated/generalization_2layers/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
@@ -113,12 +112,12 @@ for batch_id, batch_name in enumerate(batch_names):
 import importlib 
 importlib.reload(scdisinfact)
 start_time = time.time()
-reg_mmd_comm = 1e-2
-reg_mmd_diff = 1e-2
+reg_mmd_comm = 1e-4
+reg_mmd_diff = 1e-4
 reg_gl = 1
-reg_tc = 0.1
+reg_tc = 0.5
 reg_class = 1
-reg_kl = 1e-5
+reg_kl = 1e-6
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
 Ks = [8, 4, 4]
@@ -158,8 +157,15 @@ with torch.no_grad():
         d_preds.append([])
         targets.append([])
         z_ds.append([])
-        
-        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]        
         for diff_factor in range(model.n_diff_factors):
             # check classification accuracy
             d_pred = model.classifiers[diff_factor](z_d[diff_factor])
@@ -254,8 +260,15 @@ with torch.no_grad():
         d_preds.append([])
         targets.append([])
         z_ds.append([])
-        
-        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]    
         for diff_factor in range(model.n_diff_factors):
             # check classification accuracy
             d_pred = model.classifiers[diff_factor](z_d[diff_factor])
@@ -432,6 +445,6 @@ utils.plot_latent(zs = [np.concatenate([z_ds_umaps[1][x] for x in range(0, len(z
 
 
 # In[] 
-# TODO: test on permutated labels
+
 
 # %%

@@ -15,7 +15,7 @@ import scipy.sparse as sp
 import warnings
 warnings.filterwarnings("ignore")
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
 # In[]
 data_dir = "../data/GBM_treatment/Fig4/processed/"
@@ -80,19 +80,37 @@ utils.plot_latent(x_umaps, annos = [x["mstatus"].values.squeeze() for x in meta_
 # In[]
 import importlib 
 importlib.reload(scdisinfact)
+
+reg_mmd_comm = 1e-4
+reg_mmd_diff = 1e-4
+reg_gl = 1
+reg_tc = 0.5
+reg_class = 1
+reg_kl = 1e-6
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
-Ks = [12, 4]
-nepochs = 1000
-model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = nepochs/5, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = nepochs, recon_loss = "NB")
-# losses = model1.train_joint(nepochs = nepochs, recon_loss = "NB")
-torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
-model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+Ks = [8, 4]
+nepochs = 200
+interval = 10
+print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+
+print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+# train_joint is more efficient, but does not work as well compared to train
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+
+
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+
+_ = model.eval()
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
-loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
 iters = np.arange(1, len(loss_tests)+1)
 
 fig = plt.figure(figsize = (40, 10))
@@ -117,14 +135,8 @@ zs = []
 
 for dataset in datasets_array:
     with torch.no_grad():
-        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-        # z_c = model1.Enc_c(dataset.counts_stand.to(model1.device))
-
-        z_ds.append([])
-        for Enc_d in model1.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-            # z_d = Enc_d(dataset.counts_stand.to(model1.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+        z_ds.append(z_d.cpu().detach().numpy())
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 
@@ -237,19 +249,37 @@ utils.plot_latent(x_umaps, annos = [x["mstatus"].values.squeeze() for x in meta_
 # In[]
 import importlib 
 importlib.reload(scdisinfact)
+
+reg_mmd_comm = 1e-4
+reg_mmd_diff = 1e-4
+reg_gl = 1
+reg_tc = 0.5
+reg_class = 1
+reg_kl = 1e-6
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
-Ks = [12, 4]
-nepochs = 1000
-model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = nepochs/5, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = nepochs, recon_loss = "NB")
-# losses = model1.train_joint(nepochs = nepochs, recon_loss = "NB")
-torch.save(model1.state_dict(), result_dir + "model.pth")
-model1.load_state_dict(torch.load(result_dir + "model.pth"))
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+Ks = [8, 4]
+nepochs = 200
+interval = 10
+print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+
+print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+# train_joint is more efficient, but does not work as well compared to train
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+
+
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+
+_ = model.eval()
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
-loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
 iters = np.arange(1, len(loss_tests)+1)
 
 fig = plt.figure(figsize = (40, 10))
@@ -259,12 +289,29 @@ ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox
 ax.set_yscale('log')
 for i, j in zip(iters, loss_tests):
     ax.annotate("{:.3f}".format(j),xy=(i,j))
+
 fig = plt.figure(figsize = (40, 10))
 ax = fig.add_subplot()
 ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
 ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
 ax.set_yscale('log')
-for i, j in zip(iters, loss_tests):
+for i, j in zip(iters, loss_gl_d_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_recon_tests, "-*", label = 'reconstruction')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_recon_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_class_tests, "-*", label = 'classifier')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_recon_tests):
     ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 # In[] Plot results
@@ -274,14 +321,16 @@ zs = []
 
 for dataset in datasets_array:
     with torch.no_grad():
-        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-        # z_c = model1.Enc_c(dataset.counts_stand.to(model1.device))
 
-        z_ds.append([])
-        for Enc_d in model1.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-            # z_d = Enc_d(dataset.counts_stand.to(model1.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]        
+        z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 

@@ -7,7 +7,7 @@ sys.path.append("../src")
 import scdisinfact
 import utils
 
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
@@ -48,6 +48,7 @@ for batch_id, batch_name in enumerate(batch_names):
     datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id], stages_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
 
 # In[]
+'''
 # with 5000 genes, very little batch effect
 umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state = 0) 
 
@@ -77,22 +78,41 @@ utils.plot_latent(x_umaps, annos = [x["group_per_sample"].values.squeeze() for x
 utils.plot_latent(x_umaps, annos = [x["disease_stage"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "condition2.png", figsize = (12, 10), axis_label = "Latent", markerscale = 6)
 
 utils.plot_latent(x_umaps, annos = [x["cluster_labels_res.0.4"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltypes.png", figsize = (20, 10), axis_label = "Latent", markerscale = 6)
-
+'''
 # In[]
 import importlib 
 importlib.reload(scdisinfact)
-# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [1e-3, 1.0, 0.1, 1, 1e-6]
-Ks = [12, 4, 4]
 
-model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 10, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 1000, recon_loss = "NB")
-torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
-model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+reg_mmd_comm = 1e-2
+reg_mmd_diff = 1e-2
+reg_gl = 1
+reg_tc = 0.1
+reg_class = 1
+reg_kl = 1e-5
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+Ks = [12, 4, 4]
+nepochs = 50
+interval = 10
+print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+
+print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+# train_joint is more efficient, but does not work as well compared to train
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+
+
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+
+_ = model.eval()
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
-loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
 iters = np.arange(1, len(loss_tests)+1)
 
 fig = plt.figure(figsize = (40, 10))
@@ -117,14 +137,8 @@ zs = []
 
 for dataset in datasets_array:
     with torch.no_grad():
-        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-        # z_c = model1.Enc_c(dataset.counts_stand.to(model1.device))
-
-        z_ds.append([])
-        for Enc_d in model1.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-            # z_d = Enc_d(dataset.counts_stand.to(model1.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)        
+        z_ds.append(z_d.cpu().detach().numpy())
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 
@@ -135,7 +149,7 @@ z_ds_umap = []
 z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
-z_ds_umaps = [[], []]
+z_ds_umaps = [[]]
 z_cs_umaps = []
 zs_umaps = []
 for batch, _ in enumerate(datasets_array):

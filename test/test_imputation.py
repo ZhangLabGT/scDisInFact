@@ -4,7 +4,7 @@ import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("../src")
-import scdisinfact
+import scdisinfact as scdisinfact
 import utils
 from umap import UMAP
 from sklearn.decomposition import PCA
@@ -24,7 +24,7 @@ ngenes = 500
 ncells_total = 10000 
 n_batches = 6
 data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-result_dir = f"./simulated/imputation/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+result_dir = f"./simulated/imputation_2layers/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -83,7 +83,7 @@ counts = np.concatenate(counts_ctrls[0:2] + counts_stims1[2:4] + counts_stims2[4
 
 datasets = []
 for batch_id, batch_name in enumerate(batch_names):
-        datasets.append(scdisinfact.dataset(counts = counts[batch_ids == batch_id,:], 
+        datasets.append(scdisinfact.scdisinfact_dataset(counts = counts[batch_ids == batch_id,:], 
                                             anno = anno_ids[batch_ids == batch_id], 
                                             diff_labels = [condition_ids[batch_ids == batch_id]], 
                                             batch_id = batch_ids[batch_ids == batch_id]))
@@ -127,12 +127,12 @@ utils.plot_latent(x_umaps, annos = label_conditions, mode = "joint", save = save
 import importlib 
 importlib.reload(scdisinfact)
 start_time = time.time()
-reg_mmd_comm = 1e-2
-reg_mmd_diff = 1e-2
+reg_mmd_comm = 1e-4
+reg_mmd_diff = 1e-4
 reg_gl = 1
-reg_tc = 0.1
+reg_tc = 0.5
 reg_class = 1
-reg_kl = 1e-5
+reg_kl = 1e-6
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
 Ks = [8, 4]
@@ -164,7 +164,14 @@ zs = []
 # one forward pass
 with torch.no_grad():
     for batch_id, dataset in enumerate(datasets):
-        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(z.cpu().detach().numpy())
         z_ds.append([x.cpu().detach().numpy() for x in z_d])   
@@ -226,6 +233,7 @@ for diff_factor in range(model.n_diff_factors):
 
 
 # In[] Test imputation accuracy
+plt.rcParams["font.size"] = 15
 # one forward pass
 z_cs = []
 z_ds = []
@@ -233,7 +241,14 @@ zs = []
 # one forward pass
 with torch.no_grad():
     for batch_id, dataset in enumerate(datasets):
-        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(z.cpu().detach().numpy())
         z_ds.append([x.cpu().detach().numpy() for x in z_d])   
@@ -255,7 +270,6 @@ z_ds_ctrl = np.concatenate([x[0] for x in z_ds[0:2]], axis = 0)
 change_stim1_ctrl = mean_ctrl - mean_stim1
 change_stim2_ctrl = mean_ctrl - mean_stim2
 
-'''
 mse = []
 pearson = []
 mse_diff = []
@@ -263,115 +277,143 @@ mse_ratio = []
 pearson_ratio = []
 mse_ratio_diff = []
 
-for batch_id, dataset in enumerate(datasets):
-    with torch.no_grad():
-        if batch_id in [2,3,4,5]:
-            # NOTE: impute, removed of condition effect, still keep batch_effect
-            z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:,None]], dim = 1).to(model.device))
-            z_d = torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])
-            z = torch.concat((z_c, z_d, torch.tensor([[batch_id]], device = model.device).expand(dataset.counts_stand.shape[0], 1)), dim = 1)
-            mu_impute, _, _ = model.Dec(z)
-            mu_impute = mu_impute.cpu().detach().numpy() 
-            # NOTE: mu is normalized of library size
-            mu_impute_norm = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True)
-
-            # NOTE: denoise, keep condition and batch effect
-            z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:,None]], dim = 1).to(model.device))
+np.random.seed(0)
+with torch.no_grad():
+    for batch_id, dataset in enumerate(datasets):
+        #-------------------------------------------------------------------------------------------------------------------
+        #
+        # Remove both batch effect and condition effect (Imputation of count matrices under the control condition)
+        #
+        #-------------------------------------------------------------------------------------------------------------------
+        
+        # removed of batch effect
+        ref_batch = 0.0
+        # still use the original batch_id as input, not change the latent embedding
+        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+        if batch_id in [0,1]:
             z_d = []
             for Enc_d in model.Enc_ds:
-                _z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:,None]], dim = 1).to(model.device))
-                z_d.append(_z_d)
-            z = torch.concat([z_c] + z_d + [torch.tensor([[batch_id]], device = model.device).expand(dataset.counts_stand.shape[0], 1)], axis = 1)        
-            mu, _, _ = model.Dec(z)
-            mu = mu.cpu().detach().numpy() 
-            mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
+                # still use the original batch_id as input, not change the latent embedding
+                _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+                z_d.append(_z_d)        
 
-            # ground truth: real count
-            mu_gt = counts_gt[batch_id]
-            mu_gt_norm = mu_gt/np.sum(counts_gt[batch_id], axis = 1, keepdims = True)
+        elif batch_id in [2,3,4,5]:
+            # NOTE: removed of condition effect
+            # manner one, use mean
+            z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
+            
+        # NOTE: change the batch_id into ref batch as input, change the diff condition into control
+        mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
 
-            # mse is calculated by averaging over cells
-            mse.append(np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1)))
-            # pearson is calculated by averaging over cells
-            pearson.append(np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])])))
-            mse_diff.append(np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1)))
+        mu_impute = mu_impute.cpu().detach().numpy() 
+        # NOTE: mu is normalized of library size
+        mu_impute_norm = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True)
 
-            mse_ratio.append(
-                np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm - mu_norm) ** 2, axis = 1))
-            )
+        #-------------------------------------------------------------------------------------------------------------------
+        #
+        # Not remove either batch effect or condition effect (only denoise the count matrix) 
+        #
+        #-------------------------------------------------------------------------------------------------------------------
+        # still use the original batch_id as input, not change the latent embedding
+        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+        z_d = []
+        for Enc_d in model.Enc_ds:
+            # still use the original batch_id as input, not change the latent embedding
+            _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+            z_d.append(_z_d)        
+            
+        # NOTE: change the batch_id into ref batch as input, only remove the batch effect but keep the condition effect
+        # mu, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
+        mu, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), dataset.batch_id[:,None].to(model.device))
+        mu = mu.cpu().detach().numpy() 
+        # NOTE: mu is normalized of library size
+        mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
 
-            pearson_ratio.append(
-                np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])]))/np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_norm[i,:])[0] for i in range(mu_norm.shape[0])]))
-            )
+        #-------------------------------------------------------------------------------------------------------------------
+        #
+        # TODO: challenge: remove only batch effect and keep the condition effect, then compared the mse with remove both batch effect and condition effect
+        # Requires the accurate disentangling of both parts (condition and batch effect). 
+        # (Alternative: remove only condition effect but keep batch effect, then compare) 
+        #
+        #-------------------------------------------------------------------------------------------------------------------
 
-            mse_ratio_diff.append(
-                np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_norm[:,:2*n_diff_genes]) ** 2, axis = 1))
-            )
+        # input count matrix
+        # mu_obs = dataset.counts.cpu().detach().numpy()
+        # mu_norm = mu_obs/np.sum(mu_obs, axis = 1, keepdims = True)
 
-        else:
-            # NOTE: for batch 0 and 1, don't need to remove condition effect, impute => denoise
-            z_c, _ = model.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:,None]], dim = 1).to(model.device))
-            z_d = []
-            for Enc_d in model.Enc_ds:
-                _z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:,None]], dim = 1).to(model.device))
-                z_d.append(_z_d)
-            z = torch.concat([z_c] + z_d + [torch.tensor([[batch_id]], device = model.device).expand(dataset.counts_stand.shape[0], 1)], axis = 1)        
-            mu_impute, _, _ = model.Dec(z)
-            mu_impute = mu_impute.cpu().detach().numpy() 
-            mu_impute_norm = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True)
-            mu = mu_impute
-            mu_norm = mu_impute_norm
+        # ground truth: real count
+        mu_gt = counts_gt[batch_id]
+        mu_gt_norm = mu_gt/np.sum(counts_gt[batch_id], axis = 1, keepdims = True)
 
-            # ground truth: real count
-            mu_gt = counts_gt[batch_id]
-            mu_gt_norm = mu_gt/np.sum(counts_gt[batch_id], axis = 1, keepdims = True)
+        # mse is calculated by averaging over cells
+        mse.append(np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1)))
 
-            # mse is calculated by averaging over cells
-            mse.append(np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1)))
-            # pearson is calculated by averaging over cells
-            pearson.append(np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])])))
-            mse_diff.append(np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1)))
+        # pearson is calculated by averaging over cells
+        pearson.append(np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])])))
+        mse_diff.append(np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1)))
 
-        # # plot the correlationship
-        # fig = plt.figure(figsize = (14, 14))
-        # ax = fig.subplots(nrows = 2, ncols = 2)
-        # ax[0,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_impute_norm[:,20:].reshape(-1), s = 3)
-        # ax[0,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3, c = "r")
-        # ax[0,0].plot([0,1], [0,1], c = "k")
-        # ax[0,0].set_xlim(xmin = 0, xmax = 1)
-        # ax[0,0].set_ylim(ymin = 0, ymax = 1)
-        # ax[0,0].set_title(f"Impute batch {batch_id}")
+        mse_ratio.append(
+            np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm - mu_norm) ** 2, axis = 1))
+        )
 
-        # ax[0,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3)
-        # ax[0,1].plot([0,1], [0,1], c = "k")
-        # ax[0,1].set_xlim(xmin = 0, xmax = 0.1)
-        # ax[0,1].set_ylim(ymin = 0, ymax = 0.1)
-        # ax[0,1].set_title(f"Impute batch {batch_id} (diff genes)")
-        # fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+        pearson_ratio.append(
+            np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])]))/np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_norm[i,:])[0] for i in range(mu_norm.shape[0])]))
+        )
 
-        # ax[1,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_norm[:,20:].reshape(-1), s = 3)
-        # ax[1,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3, c = "r")
-        # ax[1,0].plot([0,1], [0,1], c = "k")
-        # ax[1,0].set_xlim(xmin = 0, xmax = 1)
-        # ax[1,0].set_ylim(ymin = 0, ymax = 1)
-        # ax[1,0].set_title(f"Denoise batch {batch_id}")
+        mse_ratio_diff.append(
+            np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_norm[:,:2*n_diff_genes]) ** 2, axis = 1))
+        )
 
-        # ax[1,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3)
-        # ax[1,1].plot([0,1], [0,1], c = "k")
-        # ax[1,1].set_xlim(xmin = 0, xmax = 0.1)
-        # ax[1,1].set_ylim(ymin = 0, ymax = 0.1)
-        # ax[1,1].set_title(f"Denoise batch {batch_id} (diff genes)")
-        # fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+        # plot the correlationship
+        fig = plt.figure(figsize = (14, 14))
+        ax = fig.subplots(nrows = 2, ncols = 2)
+        ax[0,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_impute_norm[:,20:].reshape(-1), s = 3)
+        ax[0,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3, c = "r")
+        ax[0,0].plot([0,1], [0,1], c = "k")
+        ax[0,0].set_xlim(xmin = 0, xmax = 1)
+        ax[0,0].set_ylim(ymin = 0, ymax = 1)
+        ax[0,0].set_xlabel("True count")
+        ax[0,0].set_ylabel("Impute count")
+        ax[0,0].set_title(f"Impute batch {batch_id}")
 
-print(mse)
-print(pearson)
-print(mse_diff)
+        ax[0,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3)
+        ax[0,1].plot([0,1], [0,1], c = "k")
+        ax[0,1].set_xlim(xmin = 0, xmax = 0.1)
+        ax[0,1].set_ylim(ymin = 0, ymax = 0.1)
+        ax[0,1].set_xlabel("True count")
+        ax[0,1].set_ylabel("Impute count")
+        ax[0,1].set_title(f"Impute batch {batch_id} (diff genes)")
+        fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+
+        ax[1,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_norm[:,20:].reshape(-1), s = 3)
+        ax[1,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3, c = "r")
+        ax[1,0].plot([0,1], [0,1], c = "k")
+        ax[1,0].set_xlim(xmin = 0, xmax = 1)
+        ax[1,0].set_ylim(ymin = 0, ymax = 1)
+        ax[1,0].set_xlabel("True count")
+        ax[1,0].set_ylabel("Observed count")
+        ax[1,0].set_title(f"Denoised batch {batch_id}")
+
+        ax[1,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3)
+        ax[1,1].plot([0,1], [0,1], c = "k")
+        ax[1,1].set_xlim(xmin = 0, xmax = 0.1)
+        ax[1,1].set_ylim(ymin = 0, ymax = 0.1)
+        ax[1,1].set_xlabel("True count")
+        ax[1,1].set_ylabel("Observed count")
+        ax[1,1].set_title(f"Denoised batch {batch_id} (diff genes)")
+        fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+
+print(mse_ratio)
+print(pearson_ratio)
+print(mse_ratio_diff)
 np.savetxt(result_dir + comment + "mse.txt", np.array(mse))
 np.savetxt(result_dir + comment + "mse_diff.txt", np.array(mse_diff))
 np.savetxt(result_dir + comment + "pearson.txt", np.array(pearson))
-'''
 
-pass
+np.savetxt(result_dir + comment + "mse_ratio.txt", np.array(mse_ratio))
+np.savetxt(result_dir + comment + "mse_ratio_diff.txt", np.array(mse_ratio_diff))
+np.savetxt(result_dir + comment + "pearson_ratio.txt", np.array(pearson_ratio))
+plt.rcParams["font.size"] = 10
 # In[] Visualize the impute matrix
 
 # NOTE: Impute, removed of both conditions and batch effect
@@ -500,69 +542,6 @@ utils.plot_latent(zs = x_umaps, annos = label_batches, mode = "joint", axis_labe
 utils.plot_latent(zs = x_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
 
 # In[]
-# NOTE: Impute, removed of both conditions and batch effect
-zs = []
-mu_imputes = []
-
-np.random.seed(0)
-for batch_id, dataset in enumerate(datasets):
-    # removed of batch effect
-    ref_batch = 0.0
-    with torch.no_grad():
-        z_c, logvar_c = model.Enc_c(torch.concat([dataset.counts_stand, torch.tensor([ref_batch] * dataset.counts_stand.shape[0])[:,None]], dim = 1).to(model.device))
-        # NOTE: removed of condition effect
-        # manner one, use mean
-        # z_d = torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])
-
-        # manner two, random sample, better than mean
-        idx = np.random.choice(z_ds_ctrl.shape[0], z_c.shape[0], replace = True)
-        z_d = torch.tensor(z_ds_ctrl[idx,:], device = model.device)
-        
-        z = torch.concat((z_c, z_d, torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None]), dim = 1)
-
-        mu_impute, _, _ = model.Dec(z)
-        mu_impute = mu_impute.cpu().detach().numpy() 
-        mu_imputes.append(mu_impute)
-        zs.append(z.detach().cpu().numpy())
-
-mu_impute = np.concatenate(mu_imputes, axis = 0)
-# normalize and log transform
-mu_impute = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True) * 100
-mu_impute = np.log1p(mu_impute)
-# UMAP visualization
-umap_op = UMAP(min_dist = 0.4, random_state = 0, n_neighbors = 30)
-x_umap = umap_op.fit_transform(mu_impute)
-z_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
-
-x_umaps = []
-z_umaps = []
-for batch in range(n_batches):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + mu_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-        z_umaps.append(z_umap[start_pointer:end_pointer,:])
-
-    elif batch == (n_batches - 1):
-        start_pointer = start_pointer + mu_imputes[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
-        z_umaps.append(z_umap[start_pointer:,:])
-
-    else:
-        start_pointer = start_pointer + mu_imputes[batch - 1].shape[0]
-        end_pointer = start_pointer + mu_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-        z_umaps.append(z_umap[start_pointer:end_pointer,:])
-
-utils.plot_latent(zs = x_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_celltypes_ctrl_allmeans.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_annos, mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"impute_celltypes_sep_ctrl_allmeans.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_batches_ctrl_allmeans.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl_allmeans.png" if result_dir else None, markerscale = 6, s = 5)
-
-utils.plot_latent(zs = z_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_celltypes_ctrl_allmeans.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_umaps, annos = label_annos, mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"latent_celltypes_sep_ctrl_allmeans.png" if result_dir else None , markerscale = 6, s = 5)
-
-# In[]
 if False:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -571,8 +550,8 @@ if False:
     mses_diff = []
     status = []
     for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
-        mse = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-06]/mse.txt")
-        mse_diff = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-06]/mse_diff.txt")
+        mse = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-05]/mse.txt")
+        mse_diff = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-05]/mse_diff.txt")
         mses.append(mse)
         mses_diff.append(mse_diff)
         status.append(np.array(["control"] * 2 + ["impute"] * 4))

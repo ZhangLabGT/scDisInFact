@@ -1,31 +1,24 @@
 # In[]
-from random import random
 import sys, os
 import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("../src")
-import torch.optim as opt
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from sklearn.preprocessing import StandardScaler
-from torch.autograd import Variable
+
 import scdisinfact
-import loss_function as loss_func
 import utils
 import bmk
 
-import anndata as ad
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 
 from umap import UMAP
-import seaborn
 import scipy.sparse as sparse
 import warnings
 warnings.filterwarnings('ignore')
 
 from anndata import AnnData
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # In[]
 # NOTE: the sepsis dataset include three cohorts. 
@@ -36,10 +29,12 @@ from anndata import AnnData
 # for comparison, include healthy control in the end (details check the method part in the paper).
 # Two sample types, include CD45+ PBMC (1,000–1,500 cells per subject) and LIN–CD14–HLA-DR+ dendritic cells (300–500 cells per subject).
 
-data_dir = "../data/sepsis/sepsis_batch_processed/"
-result_dir = "sepsis/"
+# # processed dataset
+# data_dir = "../data/sepsis/sepsis_batch_processed/"
+# result_dir = "sepsis/"
+# raw dataset
 data_dir = "../data/sepsis/sepsis_batch_raw/split_batches/"
-result_dir = "sepsis_raw/"
+result_dir = "sepsis_raw/2layers/"
 # genes = np.loadtxt(data_dir + "genes_5000.txt", dtype = np.object)
 genes = np.loadtxt(data_dir + "genes_raw.txt", dtype = np.object)
 if not os.path.exists(result_dir):
@@ -94,6 +89,7 @@ for batch_id, batch_name in enumerate(batch_names):
 
     print(len(datasets_array[-1]))
 # In[]
+'''
 umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0)
 
 x_umap = umap_op.fit_transform(np.concatenate([x.counts_norm for x in datasets_array], axis = 0))
@@ -123,25 +119,54 @@ utils.plot_latent(x_umaps, annos = [x["Cell_Type"].values.squeeze() for x in met
 utils.plot_latent(x_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltype.png", figsize = (12, 10), axis_label = "Latent", markerscale = 6, label_inplace = True, text_size = "small")
 
 # utils.plot_latent(x_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "separate", save = result_dir + "separate.png", figsize = (10, 70), axis_label = "Latent", markerscale = 6)
-
+'''
 
 # In[]
 import importlib 
 importlib.reload(scdisinfact)
-# mmd, cross_entropy, total correlation, group_lasso, kl divergence, Kl divergence has a huge effect.
-lambs = [1e-2, 1.0, 0.1, 1, 1e-6]
-# lambs = [1e-2, 1.0, 0.1, 1, 1e-5]
-Ks = [12, 4]
+# reference setting
+# reg_mmd_comm = 1e-4
+# reg_mmd_diff = 1e-4
+# reg_gl = 1
+# reg_tc = 0.5
+# reg_class = 1
+# reg_kl = 1e-6
+# # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+# lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+# Ks = [8, 4]
 
-model1 = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 128, interval = 100, lr = 5e-4, lambs = lambs, seed = 0, device = device)
-losses = model1.train(nepochs = 600, recon_loss = "NB")
-torch.save(model1.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
-model1.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+# argument
+reg_mmd_comm = eval(sys.argv[1])
+reg_mmd_diff = eval(sys.argv[2])
+reg_gl = eval(sys.argv[3])
+reg_tc = eval(sys.argv[4])
+reg_class = eval(sys.argv[5])
+reg_kl = eval(sys.argv[6])
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+Ks = [8, 4]
+
+nepochs = 300
+interval = 10
+print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+
+print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
+# train_joint is more efficient, but does not work as well compared to train
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+
+
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+
+_ = model.eval()
 
 # In[] Plot the loss curve
 plt.rcParams["font.size"] = 20
-loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
-# loss_tests, loss_recon_tests, loss_mmd_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
+loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
 iters = np.arange(1, len(loss_tests)+1)
 
 fig = plt.figure(figsize = (40, 10))
@@ -157,7 +182,23 @@ ax = fig.add_subplot()
 ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
 ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
 ax.set_yscale('log')
-for i, j in zip(iters, loss_tests):
+for i, j in zip(iters, loss_gl_d_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_recon_tests, "-*", label = 'reconstruction')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_recon_tests):
+    ax.annotate("{:.3f}".format(j),xy=(i,j))
+
+fig = plt.figure(figsize = (40, 10))
+ax = fig.add_subplot()
+ax.plot(iters, loss_class_tests, "-*", label = 'classifier')
+ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
+ax.set_yscale('log')
+for i, j in zip(iters, loss_recon_tests):
     ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 # In[] Plot results
@@ -167,14 +208,8 @@ zs = []
 
 for dataset in datasets_array:
     with torch.no_grad():
-        z_c, _ = model1.Enc_c(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-        # z_c = model1.Enc_c(dataset.counts_stand.to(model1.device))
-
-        z_ds.append([])
-        for Enc_d in model1.Enc_ds:
-            z_d, _ = Enc_d(torch.concat([dataset.counts_stand, dataset.batch_id[:, None]], dim = 1).to(model1.device))
-            # z_d = Enc_d(dataset.counts_stand.to(model1.device))
-            z_ds[-1].append(z_d.cpu().detach().numpy())
+        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)        
+        z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 
