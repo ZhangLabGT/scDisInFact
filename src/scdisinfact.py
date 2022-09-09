@@ -16,7 +16,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class dataset(Dataset):
 
-    def __init__(self, counts, anno, diff_labels, batch_id):
+    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id = None):
         """
         Preprocessing similar to the DCA (dca.io.normalize)
         """
@@ -44,6 +44,10 @@ class dataset(Dataset):
             assert diff_label.shape[0] == self.counts_stand.shape[0]
             self.diff_labels.append(torch.LongTensor(diff_label))
         self.batch_id = torch.Tensor(batch_id)
+        if mmd_batch_id is None:
+            self.mmd_batch_id = self.batch_id
+        else:
+            self.mmd_batch_id = torch.Tensor(mmd_batch_id)
 
     def __len__(self):
         return self.counts.shape[0]
@@ -51,9 +55,9 @@ class dataset(Dataset):
     def __getitem__(self, idx):
         # data original data, index the index of cell, label, corresponding labels, batch, corresponding batch number
         if self.anno is not None:
-            sample = {"batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "size_factor": self.size_factor[idx]}
+            sample = {"mmd_batch_id": self.mmd_batch_id[idx], "batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "size_factor": self.size_factor[idx]}
         else:
-            sample = {"batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "size_factor": self.size_factor[idx]}
+            sample = {"mmd_batch_id": self.mmd_batch_id[idx], "batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "size_factor": self.size_factor[idx]}
         return sample
 
 
@@ -112,7 +116,7 @@ class scdisinfact(nn.Module):
             self.train_loaders.append(DataLoader(dataset, batch_size = self.batch_size, shuffle = True))
             # create test loader
             # subsampling the test dataset when the dataset is too large
-            cutoff = 10000
+            cutoff = 100
             if len(dataset) > cutoff:
                 print("test dataset shrink to {:d}".format(cutoff))
                 samples = torch.randperm(n = cutoff)[:cutoff]
@@ -307,25 +311,28 @@ class scdisinfact(nn.Module):
                 # loop through the data batches correspond to diffferent data matrices
                 count_stand = []
                 batch_id = []
+                mmd_batch_id = []
                 size_factor = []
                 count = []
                 diff_labels = [[] for x in range(self.n_diff_factors)]
 
                 # load count data
                 for x in data_batch:
-                    count_stand.append(x["count_stand"].to(self.device, non_blocking=True))
-                    batch_id.append(x["batch_id"][:, None].to(self.device, non_blocking=True))
-                    size_factor.append(x["size_factor"].to(self.device, non_blocking=True))
-                    count.append(x["count"].to(self.device, non_blocking=True))          
+                    count_stand.append(x["count_stand"])
+                    batch_id.append(x["batch_id"][:, None])
+                    mmd_batch_id.append(x["mmd_batch_id"])
+                    size_factor.append(x["size_factor"])
+                    count.append(x["count"])       
                     for diff_factor in range(self.n_diff_factors):
-                        diff_labels[diff_factor].append(x["diff_labels"][diff_factor].to(self.device, non_blocking=True))
-                
-                count_stand = torch.cat(count_stand, dim = 0)
-                batch_id = torch.cat(batch_id, dim = 0)
-                size_factor = torch.cat(size_factor, dim = 0)
-                count = torch.cat(count, dim = 0)
+                        diff_labels[diff_factor].append(x["diff_labels"][diff_factor])
+
+                count_stand = torch.cat(count_stand, dim = 0).to(self.device, non_blocking=True)
+                batch_id = torch.cat(batch_id, dim = 0).to(self.device, non_blocking=True)
+                mmd_batch_id = torch.cat(mmd_batch_id, dim = 0).to(self.device, non_blocking=True)
+                size_factor = torch.cat(size_factor, dim = 0).to(self.device, non_blocking=True)
+                count = torch.cat(count, dim = 0).to(self.device, non_blocking=True)
                 for diff_factor in range(self.n_diff_factors):
-                    diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0)
+                    diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0).to(self.device, non_blocking=True)
 
                 # 1. 
                 # freeze the gradient of diff_encoders, classifiers, and discriminators
@@ -348,7 +355,7 @@ class scdisinfact(nn.Module):
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
                 loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
-                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = batch_id.squeeze(), diff_labels = diff_labels, recon_loss = recon_loss)
+                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = loss_recon + self.lambs["mmd_comm"] * loss_mmd_comm + self.lambs["kl"] * loss_kl
                 loss.backward()
@@ -377,7 +384,7 @@ class scdisinfact(nn.Module):
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
                 loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
-                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = batch_id.squeeze(), diff_labels = diff_labels, recon_loss = recon_loss)
+                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * (loss_class + reg_contr * loss_contr) + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
                 loss.backward()
@@ -406,7 +413,7 @@ class scdisinfact(nn.Module):
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
                 loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
-                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = batch_id.squeeze(), diff_labels = diff_labels, recon_loss = recon_loss)
+                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = self.lambs["tc"] * loss_tc
                 loss.backward()
@@ -421,25 +428,28 @@ class scdisinfact(nn.Module):
                         # loop through the data batches correspond to diffferent data matrices
                         count_stand = []
                         batch_id = []
+                        mmd_batch_id = []
                         size_factor = []
                         count = []
                         diff_labels = [[] for x in range(self.n_diff_factors)]
 
                         # load count data
                         for x in data_batch:
-                            count_stand.append(x["count_stand"].to(self.device, non_blocking=True))
-                            batch_id.append(x["batch_id"][:, None].to(self.device, non_blocking=True))
-                            size_factor.append(x["size_factor"].to(self.device, non_blocking=True))
-                            count.append(x["count"].to(self.device, non_blocking=True))          
+                            count_stand.append(x["count_stand"])
+                            batch_id.append(x["batch_id"][:, None])
+                            mmd_batch_id.append(x["mmd_batch_id"])
+                            size_factor.append(x["size_factor"])
+                            count.append(x["count"])          
                             for diff_factor in range(self.n_diff_factors):
-                                diff_labels[diff_factor].append(x["diff_labels"][diff_factor].to(self.device, non_blocking=True))
+                                diff_labels[diff_factor].append(x["diff_labels"][diff_factor])
                         
-                        count_stand = torch.cat(count_stand, dim = 0)
-                        batch_id = torch.cat(batch_id, dim = 0)
-                        size_factor = torch.cat(size_factor, dim = 0)
-                        count = torch.cat(count, dim = 0)
+                        count_stand = torch.cat(count_stand, dim = 0).to(self.device, non_blocking=True)
+                        batch_id = torch.cat(batch_id, dim = 0).to(self.device, non_blocking=True)
+                        mmd_batch_id = torch.cat(mmd_batch_id, dim = 0).to(self.device, non_blocking=True)
+                        size_factor = torch.cat(size_factor, dim = 0).to(self.device, non_blocking=True)
+                        count = torch.cat(count, dim = 0).to(self.device, non_blocking=True)
                         for diff_factor in range(self.n_diff_factors):
-                            diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0)
+                            diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0).to(self.device, non_blocking=True)
 
                         # pass through the encoders
                         dict_inf = self.inference(counts = count_stand, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
@@ -447,7 +457,7 @@ class scdisinfact(nn.Module):
                         dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
                         loss_recon_test, loss_kl_test, loss_mmd_comm_test, loss_mmd_diff_test, loss_class_test, loss_contr_test, loss_tc_test, loss_gl_d_test = self.loss(dict_inf = dict_inf, \
-                            dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = batch_id.squeeze(), diff_labels = diff_labels, recon_loss = recon_loss)
+                            dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                         # total loss
                         loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * (loss_class_test + reg_contr * loss_contr_test) \

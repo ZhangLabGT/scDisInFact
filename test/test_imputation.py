@@ -4,8 +4,9 @@ import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("../src")
-import scdisinfact as scdisinfact
+import scdisinfact
 import utils
+import bmk
 from umap import UMAP
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -17,23 +18,23 @@ warnings.filterwarnings('ignore')
 device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
 # In[]
-sigma = 0.4
-n_diff_genes = 20
-diff = 8
-ngenes = 500
-ncells_total = 10000 
-n_batches = 6
-data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-result_dir = f"./simulated/imputation_2layers/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-if not os.path.exists(result_dir):
-    os.makedirs(result_dir)
-
-# data_dir = f"../data/simulated/" + sys.argv[1] + "/"
-# result_dir = f"./simulated/imputation/" + sys.argv[1] + "/"
-# n_diff_genes = eval(sys.argv[1].split("_")[4])
+# sigma = 0.4
+# n_diff_genes = 20
+# diff = 8
+# ngenes = 500
+# ncells_total = 10000 
 # n_batches = 6
+# data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# result_dir = f"./simulated/imputation_sample/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 # if not os.path.exists(result_dir):
 #     os.makedirs(result_dir)
+
+data_dir = f"../data/simulated/" + sys.argv[1] + "/"
+result_dir = f"./simulated/imputation_lsa/" + sys.argv[1] + "/"
+n_diff_genes = eval(sys.argv[1].split("_")[4])
+n_batches = 6
+if not os.path.exists(result_dir):
+    os.makedirs(result_dir)
 
 # TODO: randomly remove some celltypes?
 counts_ctrls = []
@@ -83,7 +84,7 @@ counts = np.concatenate(counts_ctrls[0:2] + counts_stims1[2:4] + counts_stims2[4
 
 datasets = []
 for batch_id, batch_name in enumerate(batch_names):
-        datasets.append(scdisinfact.scdisinfact_dataset(counts = counts[batch_ids == batch_id,:], 
+        datasets.append(scdisinfact.dataset(counts = counts[batch_ids == batch_id,:], 
                                             anno = anno_ids[batch_ids == batch_id], 
                                             diff_labels = [condition_ids[batch_ids == batch_id]], 
                                             batch_id = batch_ids[batch_ids == batch_id]))
@@ -300,8 +301,19 @@ with torch.no_grad():
         elif batch_id in [2,3,4,5]:
             # NOTE: removed of condition effect
             # manner one, use mean
-            z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
+            # z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
             
+            # manner two, random sample, better than mean
+            # idx = np.random.choice(z_ds_ctrl.shape[0], z_c.shape[0], replace = True)
+            # z_d = [torch.tensor(z_ds_ctrl[idx,:], device = model.device)]
+            
+            # manner three, latent space arithmetics
+            if batch_id in [2,3]:
+                z_d = z_ds[batch_id][0] + change_stim1_ctrl
+            else:
+                z_d = z_ds[batch_id][0] + change_stim2_ctrl 
+            z_d = [torch.tensor(z_d, device = model.device)]
+
         # NOTE: change the batch_id into ref batch as input, change the diff condition into control
         mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
 
@@ -403,9 +415,9 @@ with torch.no_grad():
         ax[1,1].set_title(f"Denoised batch {batch_id} (diff genes)")
         fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
 
-print(mse_ratio)
-print(pearson_ratio)
-print(mse_ratio_diff)
+# print(mse_ratio)
+# print(pearson_ratio)
+# print(mse_ratio_diff)
 np.savetxt(result_dir + comment + "mse.txt", np.array(mse))
 np.savetxt(result_dir + comment + "mse_diff.txt", np.array(mse_diff))
 np.savetxt(result_dir + comment + "pearson.txt", np.array(pearson))
@@ -453,18 +465,18 @@ with torch.no_grad():
         elif batch_id in [2,3,4,5]:
             # NOTE: removed of condition effect
             # manner one, use mean
-            z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
+            # z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
             
             # manner two, random sample, better than mean
             # idx = np.random.choice(z_ds_ctrl.shape[0], z_c.shape[0], replace = True)
             # z_d = [torch.tensor(z_ds_ctrl[idx,:], device = model.device)]
             
             # manner three, latent space arithmetics
-            # if batch_id in [2,3]:
-            #     z_d = z_ds[batch_id][0] + change_stim1_ctrl
-            # else:
-            #     z_d = z_ds[batch_id][0] + change_stim2_ctrl 
-            # z_d = [torch.tensor(z_d, device = model.device)]
+            if batch_id in [2,3]:
+                z_d = z_ds[batch_id][0] + change_stim1_ctrl
+            else:
+                z_d = z_ds[batch_id][0] + change_stim2_ctrl 
+            z_d = [torch.tensor(z_d, device = model.device)]
 
 
         z_ds_impute.append(z_d[0].detach().cpu().numpy())
@@ -542,6 +554,36 @@ utils.plot_latent(zs = x_umaps, annos = label_batches, mode = "joint", axis_labe
 utils.plot_latent(zs = x_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
 
 # In[]
+mu_impute = np.concatenate(mu_imputes, axis = 0)
+mu_impute = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True) * 100
+mu_impute = np.log1p(mu_impute)
+x_pca = PCA(n_components = 100).fit_transform(mu_impute)
+labels = np.concatenate(label_annos, axis = 0)
+n_neighbors = 50
+# graph connectivity score, check the batch mixing of the imputated gene expression data
+gc_scdisinfact = bmk.graph_connectivity(X = x_pca, groups = labels, k = n_neighbors)
+print('GC (scDisInFact): {:.3f}'.format(gc_scdisinfact))
+
+# ARI score, check the separation of cell types? still needed?
+nmi_scdisinfact = []
+ari_scdisinfact = []
+for resolution in np.arange(0.1, 10, 0.5):
+    leiden_labels_scdisinfact = utils.leiden_cluster(X = x_pca, knn_indices = None, knn_dists = None, resolution = resolution)
+    nmi_scdisinfact.append(bmk.nmi(group1 = labels, group2 = leiden_labels_scdisinfact))
+    ari_scdisinfact.append(bmk.ari(group1 = labels, group2 = leiden_labels_scdisinfact))
+print('NMI (scDisInFact): {:.3f}'.format(max(nmi_scdisinfact)))
+print('ARI (scDisInFact): {:.3f}'.format(max(ari_scdisinfact)))
+
+#
+scores = pd.DataFrame(columns = ["GC", "NMI", "ARI", "resolution", "methods"])
+scores["resolution"] = np.arange(0.1, 10, 0.5)
+scores["NMI"] = nmi_scdisinfact
+scores["ARI"] = ari_scdisinfact
+scores["methods"] = "scDisInFact"
+scores["GC"] = gc_scdisinfact
+scores.to_csv(result_dir + comment + "batch_mixing_scdisinfact.csv")
+
+# In[]
 if False:
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -549,9 +591,10 @@ if False:
     mses = []
     mses_diff = []
     status = []
+    result_dir = "./simulated/imputation_lsa/"
     for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
-        mse = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-05]/mse.txt")
-        mse_diff = np.loadtxt("./simulated/imputation/imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.01, 0.01, 1, 1, 0.1, 1e-05]/mse_diff.txt")
+        mse = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse.txt")
+        mse_diff = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_diff.txt")
         mses.append(mse)
         mses_diff.append(mse_diff)
         status.append(np.array(["control"] * 2 + ["impute"] * 4))
@@ -569,8 +612,40 @@ if False:
     sns.violinplot(data = mse, x = "status", y = "MSE", ax = ax[0])
     sns.violinplot(data = mse, x = "status", y = "MSE (diff)", ax = ax[1])
     plt.tight_layout()
-    fig.savefig("./simulated/imputation/mse.png", bbox_inches = "tight")
+    fig.savefig(result_dir + "mse.png", bbox_inches = "tight")
 
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    plt.rcParams["font.size"] = 20
+    mses = []
+    mses_diff = []
+    status = []
+    for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
+        mse = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio.txt")
+        mse_diff = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio_diff.txt")
+        mses.append(mse)
+        mses_diff.append(mse_diff)
+        status.append(np.array(["control"] * 2 + ["impute"] * 4))
+    mses = np.concatenate(mses, axis = 0)
+    mses_diff = np.concatenate(mses_diff, axis = 0)
+    status = np.concatenate(status, axis = 0)
     
+    mse = pd.DataFrame(columns = ["MSE Ratio", "MSE Ratio (diff)", "status"])
+    mse["MSE Ratio"] = mses
+    mse["MSE Ratio (diff)"] = mses_diff
+    mse["status"] = status
+
+    fig = plt.figure(figsize = (10,5))
+    ax = fig.subplots(nrows = 1, ncols = 2)
+    sns.violinplot(data = mse, x = "status", y = "MSE Ratio", ax = ax[0])
+    sns.violinplot(data = mse, x = "status", y = "MSE Ratio (diff)", ax = ax[1])
+    plt.tight_layout()
+    fig.savefig(result_dir + "mse_ratio.png", bbox_inches = "tight")
+
+
+    # print mean mse
+    mse_impute = mse[mse["status"] == "impute"]
+    print(np.mean(mse_impute["MSE Ratio (diff)"].values))
+    print(np.mean(mse_impute["MSE Ratio"].values))
 
 # %%

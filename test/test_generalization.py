@@ -358,7 +358,15 @@ label_train_test = []
 
 for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, datasets_test)):
     with torch.no_grad():
-        z_c_train, z_d, z, mu = model.test_model(counts = dataset_train.counts_stand.to(model.device), batch_ids = dataset_train.batch_id[:,None].to(model.device), print_stat = False)        
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset_train.counts_stand.to(model.device), batch_ids = dataset_train.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset_train.batch_id[:,None].to(model.device))
+        z_c_train = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]
+
         z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c_train.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
@@ -368,7 +376,14 @@ for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, dat
         label_cond2.append(dataset_train.diff_labels[1])
         label_train_test.append(np.array(len(dataset_train) * ["train"]))
 
-        z_c_test, z_d, z, mu = model.test_model(counts = dataset_test.counts_stand.to(model.device), batch_ids = dataset_test.batch_id[:,None].to(model.device), print_stat = False)        
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset_test.counts_stand.to(model.device), batch_ids = dataset_test.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset_test.batch_id[:,None].to(model.device))
+        z_c_test = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]
         z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c_test.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))

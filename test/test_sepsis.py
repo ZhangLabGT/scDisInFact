@@ -149,7 +149,7 @@ Ks = [8, 4]
 nepochs = 300
 interval = 10
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 8, interval = interval, lr = 5e-4, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
@@ -208,7 +208,14 @@ zs = []
 
 for dataset in datasets_array:
     with torch.no_grad():
-        z_c, z_d, z, mu = model.test_model(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)        
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]    
         z_ds.append([x.cpu().detach().numpy() for x in z_d])
         z_cs.append(z_c.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
