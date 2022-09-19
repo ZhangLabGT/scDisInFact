@@ -16,19 +16,21 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class dataset(Dataset):
 
-    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id = None):
+    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id = None, normalize = True):
         """
         Preprocessing similar to the DCA (dca.io.normalize)
         """
         assert not len(counts) == 0, "Count is empty"
-        # normalize the count
-        self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
-        # is the tile necessary?
-        # in scanpy, np.median(counts) is used instead of 100 here
-        self.counts_norm = counts/self.libsizes * 100
-        self.counts_norm = np.log1p(self.counts_norm)
         self.counts = torch.FloatTensor(counts)
-
+        # normalize the count
+        if normalize:
+            self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
+            # in scanpy, np.median(counts) is used instead of 100 here
+            self.counts_norm = counts/self.libsizes * 100
+            self.counts_norm = np.log1p(self.counts_norm)
+        else:
+            self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
+            self.counts_norm = counts/self.libsizes * 100
         # further standardize the count
         self.counts_stand = torch.FloatTensor(StandardScaler().fit_transform(self.counts_norm))
         if anno is not None:
@@ -155,18 +157,20 @@ class scdisinfact(nn.Module):
         # Discriminator for factor vae
         self.disc = model.FCLayers(n_in=self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_out=2, n_cat_list=None, n_layers=3, n_hidden=2, dropout_rate=0.0).to(self.device)
 
-        # parameter when training the common biological factor
-        self.param_common = nn.ModuleDict({"encoder_common": self.Enc_c, "decoder": self.Dec})
-        # parameter when training the time factor
-        self.param_diff = nn.ModuleDict({"encoder_diff": nn.ModuleList(self.Enc_ds), "classifier": nn.ModuleList(self.classifiers)})
+        # # parameter when training the common biological factor
+        # self.param_common = nn.ModuleDict({"encoder_common": self.Enc_c, "decoder": self.Dec})
+        # # parameter when training the time factor
+        # self.param_diff = nn.ModuleDict({"encoder_diff": nn.ModuleList(self.Enc_ds), "classifier": nn.ModuleList(self.classifiers)})
 
-        self.param_disc = nn.ModuleDict({"disc": self.disc})
-        # declare optimizer for time factor and common biological factor separately
-        self.opt = opt.Adam(
-            [{'params': self.param_common.parameters()}, 
-            {'params': self.param_diff.parameters()},
-            {'params': self.param_disc.parameters()}], lr = self.lr
-        )
+        # self.param_disc = nn.ModuleDict({"disc": self.disc})
+        # # declare optimizer for time factor and common biological factor separately
+        # self.opt = opt.Adam(
+        #     [{'params': self.param_common.parameters()}, 
+        #     {'params': self.param_diff.parameters()},
+        #     {'params': self.param_disc.parameters()}], lr = self.lr
+        # )
+        
+        self.opt = opt.Adam(self.parameters(), lr = self.lr)
 
     def reparametrize(self, mu, logvar, clamp = 0):
         # exp(0.5*log_var) = exp(log(\sqrt{var})) = \sqrt{var}

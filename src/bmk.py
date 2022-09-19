@@ -534,14 +534,23 @@ def silhouette(
         scale=True
 ):
     """
+    Definition:
+    ------------
+    The silhouette width measures the relationship between the within-cluster distances of a cell and 
+    the between-cluster distances of that cell to the closest cluster. Averaging
+    over all silhouette widths yields the ASW, which ranges between -1 and 1.
+
     Wrapper for sklearn silhouette function values range from [-1, 1] with
         1 being an ideal fit
         0 indicating overlapping clusters and
         -1 indicating misclassified cells
     By default, the score is scaled between 0 and 1. This is controlled `scale=True`
-    :param group_gt: cell labels
-    :param X: embedding e.g. PCA
-    :param scale: default True, scale between 0 (worst) and 1 (best)
+    
+    Parameters:
+    -------------
+    group_gt: cell labels
+    X: embedding (ncells, nlatents)
+    scale: default True, scale between 0 (worst) and 1 (best)
     """
     asw = silhouette_score(
         X=X,
@@ -563,16 +572,26 @@ def silhouette_batch(
         verbose=True
 ):
     """
+    Definition:
+    ------------
     Absolute silhouette score of batch labels subsetted for each group.
-    :param batch_key: batches to be compared against
-    :param group_key: group labels to be subsetted by e.g. cell type
-    :param embed: name of column in adata.obsm
-    :param metric: see sklearn silhouette score
-    :param scale: if True, scale between 0 and 1
-    :param return_all: if True, return all silhouette scores and label means
+    
+    For each group a silhouette score is calculated, the final score is the average of the group-based score.
+    If the `scale = True', then calculate 1-abs(ASW), where 1 means that clusters are perfectly mixed, 
+    and 0 means that clusters are not well-mixed.
+
+    Parameters:
+    ------------
+    X: embedding (ncells, nlatents)
+    batch_gt: batches to be compared against
+    group_gt: group labels to be subsetted by e.g. cell type
+    metric: see sklearn silhouette score
+    scale: if True, scale between 0 and 1
+    return_all: if True, return all silhouette scores and label means
         default False: return average width silhouette (ASW)
-    :param verbose:
-    :return:
+    
+    Returns:
+    ------------
         average width silhouette ASW
         mean silhouette per group in pd.DataFrame
         Absolute silhouette scores per group label
@@ -587,20 +606,22 @@ def silhouette_batch(
 
         if (n_batches == 1) or (n_batches == X_group.shape[0]):
             continue
-
+        
+        # calculate silhouette score for each sample in X_group
         sil_per_group = silhouette_samples(
             X_group,
             batch_group,
             metric=metric
         )
 
-        # take only absolute value
+        # take only absolute value of silhouette score
         sil_per_group = [abs(i) for i in sil_per_group]
 
         if scale:
-            # scale s.t. highest number is optimal
+            # scale s.t. highest number is optimal, 1 - abs(asw)
             sil_per_group = [1 - i for i in sil_per_group]
 
+        # batch mixing (1-abs(asw)) for each cell type (group) 
         sil_all = sil_all.append(
             pd.DataFrame({
                 'group': [group] * len(sil_per_group),

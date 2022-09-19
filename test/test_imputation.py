@@ -29,8 +29,9 @@ device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 # if not os.path.exists(result_dir):
 #     os.makedirs(result_dir)
 
-data_dir = f"../data/simulated/" + sys.argv[1] + "/"
-result_dir = f"./simulated/imputation_lsa/" + sys.argv[1] + "/"
+data_dir = f"../data/simulated_new/" + sys.argv[1] + "/"
+# lsa performs the best
+result_dir = f"./simulated/imputation_new/" + sys.argv[1] + "/"
 n_diff_genes = eval(sys.argv[1].split("_")[4])
 n_batches = 6
 if not os.path.exists(result_dir):
@@ -130,7 +131,7 @@ importlib.reload(scdisinfact)
 start_time = time.time()
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
+reg_gl = 0.1
 reg_tc = 0.5
 reg_class = 1
 reg_kl = 1e-6
@@ -148,13 +149,12 @@ print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memo
 # train_joint is more efficient, but does not work as well compared to train
 model.train()
 losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-# losses = model.train_contr(nepochs = nepochs, recon_loss = "NB")
 
 end_time = time.time()
 print("time cost: {:.2f}".format(end_time - start_time))
 
 torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth"))
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth", map_location = device))
 
 _ = model.eval()
 
@@ -339,6 +339,10 @@ with torch.no_grad():
         mu, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), dataset.batch_id[:,None].to(model.device))
         mu = mu.cpu().detach().numpy() 
         # NOTE: mu is normalized of library size
+        mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
+
+        # change mu to input
+        mu = dataset.counts.numpy()
         mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
 
         #-------------------------------------------------------------------------------------------------------------------
@@ -590,55 +594,92 @@ if False:
     plt.rcParams["font.size"] = 20
     mses = []
     mses_diff = []
+    mses_ratio = []
+    mses_diff_ratio = []
     status = []
-    result_dir = "./simulated/imputation_lsa/"
-    for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
+    noise_levels = []
+    ndiff_genes = []
+    ndiffs = []
+    result_dir = "./simulated/imputation_new/"
+    # for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.3_20_2", "0.3_50_2", "0.3_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2","0.2_20_4", "0.2_20_8", "0.3_20_4", "0.3_20_8", "0.4_20_4", "0.4_20_8"]:
+    for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.2_20_4", "0.2_50_4", "0.2_100_4", "0.2_20_8", "0.2_50_8", "0.2_100_8"]:
+        noise_level, ndiff_gene, ndiff = dataset.split("_")
         mse = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse.txt")
         mse_diff = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_diff.txt")
         mses.append(mse)
         mses_diff.append(mse_diff)
+
+        mse_ratio = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio.txt")
+        mse_diff_ratio = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio_diff.txt")
+        mses_ratio.append(mse_ratio)
+        mses_diff_ratio.append(mse_diff_ratio)
+
         status.append(np.array(["control"] * 2 + ["impute"] * 4))
+        noise_levels.extend([noise_level] * 6)
+        ndiff_genes.extend([ndiff_gene] * 6)
+        ndiffs.extend([ndiff] * 6)
+
     mses = np.concatenate(mses, axis = 0)
     mses_diff = np.concatenate(mses_diff, axis = 0)
+    mses_ratio = np.concatenate(mses_ratio, axis = 0)
+    mses_diff_ratio = np.concatenate(mses_diff_ratio, axis = 0)
     status = np.concatenate(status, axis = 0)
-    
-    mse = pd.DataFrame(columns = ["MSE", "MSE (diff)", "status"])
+    noise_levels = np.array(noise_levels)
+    ndiff_genes = np.array(ndiff_genes)
+    ndiffs = np.array(ndiffs)
+
+    mse = pd.DataFrame(columns = ["MSE", "MSE (diff)", "MSE Ratio", "MSE Ratio (diff)", "status", "noise level", "ndiff_gene", "ndiffs"])
     mse["MSE"] = mses
     mse["MSE (diff)"] = mses_diff
+    mse["MSE Ratio"] = mses_ratio
+    mse["MSE Ratio (diff)"] = mses_diff_ratio
     mse["status"] = status
+    mse["noise level"] = noise_levels
+    mse["ndiff_gene"] = ndiff_genes
+    mse["ndiffs"] = ndiffs
+    # remove the control
+    mse = mse[mse["status"] == "impute"] 
 
     fig = plt.figure(figsize = (10,5))
     ax = fig.subplots(nrows = 1, ncols = 2)
-    sns.violinplot(data = mse, x = "status", y = "MSE", ax = ax[0])
-    sns.violinplot(data = mse, x = "status", y = "MSE (diff)", ax = ax[1])
+    sns.boxplot(data = mse, x = "noise level", y = "MSE", ax = ax[0])
+    sns.boxplot(data = mse, x = "noise level", y = "MSE (diff)", ax = ax[1])
     plt.tight_layout()
     fig.savefig(result_dir + "mse.png", bbox_inches = "tight")
 
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    plt.rcParams["font.size"] = 20
-    mses = []
-    mses_diff = []
-    status = []
-    for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
-        mse = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio.txt")
-        mse_diff = np.loadtxt(result_dir + "imputation_10000_500_" + dataset + "/fig_[8, 4]_[0.0001, 0.0001, 1, 1, 0.5, 1e-06]/mse_ratio_diff.txt")
-        mses.append(mse)
-        mses_diff.append(mse_diff)
-        status.append(np.array(["control"] * 2 + ["impute"] * 4))
-    mses = np.concatenate(mses, axis = 0)
-    mses_diff = np.concatenate(mses_diff, axis = 0)
-    status = np.concatenate(status, axis = 0)
-    
-    mse = pd.DataFrame(columns = ["MSE Ratio", "MSE Ratio (diff)", "status"])
-    mse["MSE Ratio"] = mses
-    mse["MSE Ratio (diff)"] = mses_diff
-    mse["status"] = status
+    fig = plt.figure(figsize = (10,5))
+    ax = fig.subplots(nrows = 1, ncols = 2)
+    sns.boxplot(data = mse, x = "noise level", y = "MSE Ratio", ax = ax[0])
+    sns.boxplot(data = mse, x = "noise level", y = "MSE Ratio (diff)", ax = ax[1])
+    plt.tight_layout()
+    fig.savefig(result_dir + "mse_ratio.png", bbox_inches = "tight")
+
 
     fig = plt.figure(figsize = (10,5))
     ax = fig.subplots(nrows = 1, ncols = 2)
-    sns.violinplot(data = mse, x = "status", y = "MSE Ratio", ax = ax[0])
-    sns.violinplot(data = mse, x = "status", y = "MSE Ratio (diff)", ax = ax[1])
+    sns.boxplot(data = mse, x = "ndiffs", y = "MSE", ax = ax[0])
+    sns.boxplot(data = mse, x = "ndiffs", y = "MSE (diff)", ax = ax[1])
+    plt.tight_layout()
+    fig.savefig(result_dir + "mse.png", bbox_inches = "tight")
+
+    fig = plt.figure(figsize = (10,5))
+    ax = fig.subplots(nrows = 1, ncols = 2)
+    sns.boxplot(data = mse, x = "ndiffs", y = "MSE Ratio", ax = ax[0])
+    sns.boxplot(data = mse, x = "ndiffs", y = "MSE Ratio (diff)", ax = ax[1])
+    plt.tight_layout()
+    fig.savefig(result_dir + "mse_ratio.png", bbox_inches = "tight")
+
+    fig = plt.figure(figsize = (10,5))
+    ax = fig.subplots(nrows = 1, ncols = 2)
+    sns.boxplot(data = mse, x = "ndiff_gene", y = "MSE", ax = ax[0])
+    sns.boxplot(data = mse, x = "ndiff_gene", y = "MSE (diff)", ax = ax[1])
+    plt.tight_layout()
+    fig.savefig(result_dir + "mse.png", bbox_inches = "tight")
+
+    fig = plt.figure(figsize = (10,5))
+    ax = fig.subplots(nrows = 1, ncols = 2)
+    sns.boxplot(data = mse, x = "ndiff_gene", y = "MSE Ratio", ax = ax[0])
+    sns.boxplot(data = mse, x = "ndiff_gene", y = "MSE Ratio (diff)", ax = ax[1])
     plt.tight_layout()
     fig.savefig(result_dir + "mse_ratio.png", bbox_inches = "tight")
 
@@ -647,5 +688,6 @@ if False:
     mse_impute = mse[mse["status"] == "impute"]
     print(np.mean(mse_impute["MSE Ratio (diff)"].values))
     print(np.mean(mse_impute["MSE Ratio"].values))
+
 
 # %%

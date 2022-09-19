@@ -41,7 +41,11 @@ meta_cells_array = []
 for sample_id, sample_name in enumerate(sample_names):
     counts_array.append(counts[sample_ids == sample_id, :].toarray())
     meta_cells_array.append(meta_cell.iloc[sample_ids == sample_id, :])
-    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [treatment_id[sample_ids == sample_id]], batch_id = patient_ids[sample_ids == sample_id], mmd_batch_id = sample_ids[sample_ids == sample_id]))
+    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, 
+                                              diff_labels = [treatment_id[sample_ids == sample_id]], 
+                                              batch_id = patient_ids[sample_ids == sample_id], 
+                                              mmd_batch_id = sample_ids[sample_ids == sample_id]
+                                              ))
     print(len(datasets_array[-1]))
     print(torch.unique(datasets_array[-1].batch_id))
     print(torch.unique(datasets_array[-1].mmd_batch_id))
