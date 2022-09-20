@@ -1,0 +1,12 @@
+**/__pycache__
+**/.DS_Store
+**/.vscode
+**/.history
+**/.ipynb_checkpoints
+check_points
+old
+**/.ipynb
+**/*.out
+test/_old
+**/*.pth
+**/_*
