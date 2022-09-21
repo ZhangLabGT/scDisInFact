@@ -10,3 +10,4 @@ old
 test/_old
 **/*.pth
 **/_*
+scgen-reproducibility
