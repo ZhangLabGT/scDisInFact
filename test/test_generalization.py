@@ -23,52 +23,59 @@ n_batches = 6
 
 permute = False
 
-# data_dir = f"../data/simulated/two_cond/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-data_dir = f"../data/simulated/generalize_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+data_dir = f"../data/simulated_new/2conditions_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 if permute:
-    result_dir = f"./simulated/generalization_2layers/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+    result_dir = f"./simulated/generalization/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 else:
-    result_dir = f"./simulated/generalization_2layers/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+    result_dir = f"./simulated/generalization/dataset_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
-counts = []
 # cell types
 label_annos = []
 # batch labels
 label_batches = []
+
 counts_gt = []
-label_cond1 = []
-label_cond2 = []
+counts_ctrl_healthy = []
+counts_ctrl_mild = []
+counts_ctrl_severe = []
+counts_stim_healthy = []
+counts_stim_mild = []
+counts_stim_severe = []
+
 np.random.seed(0)
 for batch_id in range(6):
-    # counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
-    counts.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}.txt', sep = "\t", header = None).values.T)
+    counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
+    
+    counts_ctrl_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_healthy.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_mild.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_mild.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_severe.txt', sep = "\t", header = None).values.T)
+    counts_stim_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_healthy.txt', sep = "\t", header = None).values.T)
+    counts_stim_mild.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_mild.txt', sep = "\t", header = None).values.T)
+    counts_stim_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_severe.txt', sep = "\t", header = None).values.T)
+
     anno = pd.read_csv(data_dir + f'cell_label{batch_id + 1}.txt', sep = "\t", index_col = 0).values.squeeze()
     # annotation labels
     label_annos.append(np.array([('cell type '+str(i)) for i in anno]))
     # batch labels
-    label_batches.append(np.array(['batch ' + str(batch_id)] * counts[-1].shape[0]))
-    
-    if batch_id in [0,1]:
-        label_cond1.append(np.array(["ctrl"] * counts[-1].shape[0]))
-    elif batch_id in [2,3]:
-        label_cond1.append(np.array(["stim1"] * counts[-1].shape[0]))
-    else:
-        label_cond1.append(np.array(["stim2"] * counts[-1].shape[0]))
+    label_batches.append(np.array(['batch ' + str(batch_id)] * counts_ctrl_healthy[-1].shape[0]))
 
-    if batch_id in [0,1,2]:
-        label_cond2.append(np.array(["age_group1"] * counts[-1].shape[0])) 
-    else:
-        label_cond2.append(np.array(["age_group2"] * counts[-1].shape[0]))       
-    
+# select the dataset
+label_cond1 = ["healthy"] * counts_ctrl_healthy[0].shape[0] + ["mild"] * counts_ctrl_healthy[1].shape[0] + ["severe"] * counts_ctrl_healthy[2].shape[0] \
+    + ["healthy"] * counts_ctrl_healthy[3].shape[0] + ["mild"] * counts_ctrl_healthy[4].shape[0] + ["severe"] * counts_ctrl_healthy[5].shape[0]
+
+label_cond2 = ["ctrl"] * (counts_ctrl_healthy[0].shape[0] + counts_ctrl_healthy[1].shape[0] + counts_ctrl_healthy[2].shape[0]) \
+    + ["stim"] * (counts_ctrl_healthy[3].shape[0] + counts_ctrl_healthy[4].shape[0] + counts_ctrl_healthy[5].shape[0])
+
+counts = [counts_ctrl_healthy[0], counts_ctrl_mild[1], counts_ctrl_severe[2], counts_stim_healthy[3], counts_stim_mild[4], counts_stim_severe[5]]
 
 # In[]
 # Train with ctrl in batches 1 & 2, stim1 in batches 3 & 4, stim2 in batches 5 & 6
-cond1_ids, cond1_names = pd.factorize(np.concatenate(label_cond1, axis = 0))
-cond2_ids, cond2_names = pd.factorize(np.concatenate(label_cond2, axis = 0))
+cond1_ids, cond1_names = pd.factorize(np.array(label_cond1))
+cond2_ids, cond2_names = pd.factorize(np.array(label_cond2))
 if permute: 
     permute_ids = np.random.permutation(cond1_ids.shape[0])
     cond1_ids = cond1_ids[permute_ids]
@@ -228,18 +235,18 @@ comment = f"train_{Ks}_{lambs}/"
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.anno for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_celltypes.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.anno for dataset in datasets_train], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"common_celltypes_sep.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.batch_id for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.diff_labels[0] for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond1.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.diff_labels[1] for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond2.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(anno_names, dataset.anno) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_celltypes.png" if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(anno_names, dataset.anno) for dataset in datasets_train], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"common_celltypes_sep.png" if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(cond1_names, dataset.diff_labels[0]) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond1.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(cond2_names, dataset.diff_labels[1]) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond2.png" if result_dir else None, markerscale = 6, s = 5)
 
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.anno for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.batch_id for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_batch.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.diff_labels[0] for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_cond1.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.anno for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.batch_id for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_batch.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.diff_labels[1] for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_cond2.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(anno_names, dataset.anno) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_batch.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(cond1_names, dataset.diff_labels[0]) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_cond1.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(anno_names, dataset.anno) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_batch.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(cond2_names, dataset.diff_labels[1]) for dataset in datasets_train], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_cond2.png" if result_dir else None, markerscale = 6, s = 5)
 
 
 # In[] Plot test results
@@ -332,18 +339,18 @@ comment = f"test_{Ks}_{lambs}/"
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.anno for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_celltypes.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.anno for dataset in datasets_test], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"common_celltypes_sep.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.batch_id for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.diff_labels[0] for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond1.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = [dataset.diff_labels[1] for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond2.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(anno_names, dataset.anno) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_celltypes.png" if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(anno_names, dataset.anno) for dataset in datasets_test], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"common_celltypes_sep.png" if result_dir else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(cond1_names, dataset.diff_labels[0]) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond1.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_cs_umaps, annos = [np.take(cond2_names, dataset.diff_labels[1]) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond2.png" if result_dir else None, markerscale = 6, s = 5)
 
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.anno for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.batch_id for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_batch.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [dataset.diff_labels[0] for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_cond1.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.anno for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.batch_id for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_batch.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = [dataset.diff_labels[1] for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_cond2.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(anno_names, dataset.anno) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_batch.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = [np.take(cond1_names, dataset.diff_labels[0]) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_cond1.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(anno_names, dataset.anno) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(batch_names, dataset.batch_id) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_batch.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = [np.take(cond2_names, dataset.diff_labels[1]) for dataset in datasets_test], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_cond2.png" if result_dir else None, markerscale = 6, s = 5)
 
 # In[] Plot joint results
 z_cs = []
@@ -363,17 +370,17 @@ for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, dat
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset_train.batch_id[:,None].to(model.device))
         z_c_train = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
+        z_d_train = dict_inf["mu_d"]
+        z = torch.cat([z_c_train] + z_d_train, dim = 1)
         mu = dict_gen["mu"]
 
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])
+        z_ds.append([x.cpu().detach().numpy() for x in z_d_train])
         z_cs.append(z_c_train.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
-        label_annos.append(dataset_train.anno)
-        label_batches.append(dataset_train.batch_id)
-        label_cond1.append(dataset_train.diff_labels[0])
-        label_cond2.append(dataset_train.diff_labels[1])
+        label_annos.append(np.take(anno_names, dataset_train.anno))
+        label_batches.append(np.take(batch_names, dataset_train.batch_id))
+        label_cond1.append(np.take(cond1_names, dataset_train.diff_labels[0]))
+        label_cond2.append(np.take(cond2_names, dataset_train.diff_labels[1]))
         label_train_test.append(np.array(len(dataset_train) * ["train"]))
 
         # pass through the encoders
@@ -381,16 +388,16 @@ for batch_id, (dataset_train, dataset_test) in enumerate(zip(datasets_train, dat
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset_test.batch_id[:,None].to(model.device))
         z_c_test = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
+        z_d_test = dict_inf["mu_d"]
+        z = torch.cat([z_c_test] + z_d_test, dim = 1)
         mu = dict_gen["mu"]
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])
+        z_ds.append([x.cpu().detach().numpy() for x in z_d_test])
         z_cs.append(z_c_test.cpu().detach().numpy())
         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
-        label_annos.append(dataset_test.anno)
-        label_batches.append(dataset_test.batch_id)
-        label_cond1.append(dataset_test.diff_labels[0])
-        label_cond2.append(dataset_test.diff_labels[1])
+        label_annos.append(np.take(anno_names, dataset_test.anno))
+        label_batches.append(np.take(batch_names, dataset_test.batch_id))
+        label_cond1.append(np.take(cond1_names, dataset_test.diff_labels[0]))
+        label_cond2.append(np.take(cond2_names, dataset_test.diff_labels[1]))
         label_train_test.append(np.array(len(dataset_test) * ["test"]))
 
 # UMAP
@@ -437,26 +444,26 @@ utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", axis_lab
 utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = label_cond1, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond1.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_cs_umaps, annos = label_cond2, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_cond2.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umaps, annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 utils.plot_latent(zs = [np.concatenate([z_cs_umaps[x] for x in range(0, len(z_cs_umaps), 2)], axis = 0), np.concatenate([z_cs_umaps[x] for x in range(1, len(z_cs_umaps), 2)], axis = 0)], 
                   annos = [np.concatenate([label_annos[x] for x in range(0, len(label_annos), 2)]), np.concatenate([label_annos[x] for x in range(1, len(label_annos), 2)])], 
-                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"common_celltype_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"common_celltype_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 
 utils.plot_latent(zs = z_ds_umaps[0], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_batch.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = label_cond1, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_cond1.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umaps[0], annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff1_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 utils.plot_latent(zs = [np.concatenate([z_ds_umaps[0][x] for x in range(0, len(z_ds_umaps[0]), 2)], axis = 0), np.concatenate([z_ds_umaps[0][x] for x in range(1, len(z_ds_umaps[0]), 2)], axis = 0)], 
                   annos = [np.concatenate([label_cond1[x] for x in range(0, len(label_cond1), 2)]), np.concatenate([label_cond1[x] for x in range(1, len(label_cond1), 2)])], 
-                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"diff1_cond1_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"diff1_cond1_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_batch.png" if result_dir else None, markerscale = 6, s = 5)
 utils.plot_latent(zs = z_ds_umaps[1], annos = label_cond2, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_cond2.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_ds_umaps[1], annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umaps[1], annos = label_train_test, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"diff2_train_test.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 utils.plot_latent(zs = [np.concatenate([z_ds_umaps[1][x] for x in range(0, len(z_ds_umaps[1]), 2)], axis = 0), np.concatenate([z_ds_umaps[1][x] for x in range(1, len(z_ds_umaps[1]), 2)], axis = 0)], 
                   annos = [np.concatenate([label_cond2[x] for x in range(0, len(label_cond2), 2)]), np.concatenate([label_cond2[x] for x in range(1, len(label_cond2), 2)])], 
-                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"diff2_cond2_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.5)
+                  mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_dir + comment+"diff2_cond2_sep.png" if result_dir else None, markerscale = 6, s = 3, alpha = 0.9)
 
 
 # In[] 

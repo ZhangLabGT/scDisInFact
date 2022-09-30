@@ -410,7 +410,7 @@ def plot_latent(zs, annos = None, mode = "joint", save = None, figsize = (20,10)
                     if zs[batch][index,0].shape[0] > 0:
                         texts.append(axs[batch].text(np.median(zs[batch][index,0]), np.median(zs[batch][index,1]), color = "black", s = cluster_types[i], fontsize = _kwargs["text_size"], weight = 'semibold', in_layout = True))
             
-            axs[batch].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(cluster_types) // 15) + 1, bbox_to_anchor=(0.94, 1), markerscale = _kwargs["markerscale"])
+            axs[batch].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(cluster_types) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
             axs[batch].set_title("batch " + str(batch + 1), fontsize = 25)
 
             axs[batch].tick_params(axis = "both", which = "major", labelsize = 15)

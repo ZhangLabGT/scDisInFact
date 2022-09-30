@@ -77,16 +77,11 @@ meta_obs_train["cell_type"] = np.concatenate(label_annos_train, axis = 0)
 meta_obs_train["batch_id"] = np.concatenate(label_batches_train, axis = 0)
 adata_train = AnnData(X = counts_train, obs = meta_obs_train)
 
+# preprocessing, normalize the count
+sc.pp.normalize_per_cell(adata_train)
+
 # testing adata
-label_conditions_test = label_stims1[2:4]
-label_batches_test = label_batches[2:4]
-label_annos_test = label_annos[2:4]
-counts_test = np.concatenate(counts_stims1[2:4], axis = 0)
-meta_obs_test = pd.DataFrame(columns = ["condition", "cell_type", "batch_id"])
-meta_obs_test["condition"] = np.concatenate(label_conditions_test, axis = 0)
-meta_obs_test["cell_type"] = np.concatenate(label_annos_test, axis = 0)
-meta_obs_test["batch_id"] = np.concatenate(label_batches_test, axis = 0)
-adata_test = AnnData(X = counts_test, obs = meta_obs_test)
+adata_test = adata_train[adata_train.obs["condition"] == "stim1",:].copy()
 
 scgen.SCGEN.setup_anndata(adata_train, batch_key="condition", labels_key="cell_type")
 model = scgen.SCGEN(adata_train)
@@ -120,16 +115,11 @@ meta_obs_train["cell_type"] = np.concatenate(label_annos_train, axis = 0)
 meta_obs_train["batch_id"] = np.concatenate(label_batches_train, axis = 0)
 adata_train = AnnData(X = counts_train, obs = meta_obs_train)
 
+# preprocessing, normalize the count
+sc.pp.normalize_per_cell(adata_train)
+
 # testing adata
-label_conditions_test = label_stims2[4:]
-label_batches_test = label_batches[4:]
-label_annos_test = label_batches[4:]
-counts_test = np.concatenate(counts_stims2[4:], axis = 0)
-meta_obs_test = pd.DataFrame(columns = ["condition", "cell_type"])
-meta_obs_test["condition"] = np.concatenate(label_conditions_test, axis = 0)
-meta_obs_test["cell_type"] = np.concatenate(label_annos_test, axis = 0)
-meta_obs_test["batch_id"] = np.concatenate(label_batches_test, axis = 0)
-adata_test = AnnData(X = counts_test, obs = meta_obs_test)
+adata_test = adata_train[adata_train.obs["condition"] == "stim2",:].copy()
 
 scgen.SCGEN.setup_anndata(adata_train, batch_key="condition", labels_key="cell_type")
 model = scgen.SCGEN(adata_train)
@@ -158,6 +148,7 @@ for batch_id in [2,3,4,5]:
   np.savetxt(result_dir + f"GxC{batch_id + 1}_ctrl_impute.txt", X = X)
 
 # In[]
+'''
 #------------------------------------------------------------------------------------------------------------------------------------------
 #
 # 2nd testing scenario: 
@@ -265,4 +256,5 @@ for batch_id in [1,2,3,4,5]:
   print(X.shape)
   np.savetxt(result_dir + f"GxC{batch_id + 1}_stim2_impute.txt", X = X)
 
+'''
 # %%
