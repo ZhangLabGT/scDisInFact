@@ -9,7 +9,8 @@ sp <- import("scipy.sparse")
 setwd("/localscratch/ziqi/scDisInFact/test/")
 data_dir <- "../data/GBM_treatment/Fig4/processed/"
 genes <- read.table(paste0(data_dir, "genes.txt"))[[1]]
-meta.cells <- read.csv(paste0(data_dir, "meta_cells.csv"), sep = "\t", row.names = 1)
+# meta.cells <- read.csv(paste0(data_dir, "meta_cells.csv"), sep = "\t", row.names = 1)
+meta.cells <- read.csv(paste0(data_dir, "meta_cells_seurat.csv"), sep = "\t", row.names = 1)
 count.rna <- sp$load_npz(paste0(data_dir, "counts_rna_csc.npz"))
 colnames(count.rna) <- genes
 rownames(count.rna) <- rownames(meta.cells)
@@ -91,7 +92,7 @@ gbm.list <- lapply(X = gbm.list, FUN = function(x) {
   x <- FindClusters(x, resolution = 0.5)
 })
 
-gbm.sample <- gbm.list[[5]]
+gbm.sample <- gbm.list[[17]]
 
 # cluster results
 DimPlot(object = gbm.sample, reduction = "umap", label = TRUE, repel = TRUE)
@@ -155,7 +156,7 @@ FeaturePlot(gbm.sample, features = c("ENSG00000113721.13-PDGFRB", "ENSG000000114
 # sample 16
 # gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Other", `2` = "Oligodendrocytes", `3` = "Other", `4` = "Myeloid", `5` = "T cell", `6` = "Other")
 # sample 17
-# gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Oligodendrocytes", `2` = "Oligodendrocytes", `3` = "Other", `4` = "T cell", `5` = "Myeloid", `6` = "Other")
+gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Oligodendrocytes", `2` = "Oligodendrocytes", `3` = "Other", `4` = "T cell", `5` = "Myeloid", `6` = "Other")
 # sample 18
 # gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Myeloid", `2` = "Oligodendrocytes", `3` = "Other")
 # sample 19
@@ -163,7 +164,7 @@ FeaturePlot(gbm.sample, features = c("ENSG00000113721.13-PDGFRB", "ENSG000000114
 # sample 20
 # gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Oligodendrocytes", `2` = "Myeloid", `3` = "Oligodendrocytes")
 # sample 21
-gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Oligodendrocytes", `2` = "Other", `3` = "Myeloid", `4` = "Other", `5` = "T cell")
+# gbm.sample <- RenameIdents(gbm.sample, `0` = "Other", `1` = "Oligodendrocytes", `2` = "Other", `3` = "Myeloid", `4` = "Other", `5` = "T cell")
 
 
 gbm.sample@meta.data[gbm.sample@meta.data[["mstatus"]] == "non-tumor", "mstatus"] <- as.character(gbm.sample@active.ident[gbm.sample@meta.data[["mstatus"]] == "non-tumor"])
@@ -175,7 +176,7 @@ meta.sample <- gbm.sample@meta.data
 # Combined meta.samples
 gbm@meta.data[rownames(meta.sample), "mstatus"] <- meta.sample[,"mstatus"]
 
-# write.table(gbm@meta.data, file = paste0(data_dir, "meta_cells_seurat.csv"), sep = "\t", quote = FALSE)
+write.table(gbm@meta.data, file = paste0(data_dir, "meta_cells_seurat2.csv"), sep = "\t", quote = FALSE)
 
 
 

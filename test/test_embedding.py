@@ -339,7 +339,7 @@ print('ARI (scDisInFact): {:.3f}'.format(max(ari_condition_scdisinfact)))
 nmi_condition_scinsight = []
 ari_condition_scinsight = []
 for resolution in np.arange(0.1, 10, 0.5):
-    leiden_labels_conditions = bmk.leiden_cluster(X = np.concatenate([x[0] for x in z_ds], axis = 0), knn_indices = None, knn_dists = None, resolution = resolution)
+    leiden_labels_conditions = bmk.leiden_cluster(X = np.concatenate(x_cond, axis = 0), knn_indices = None, knn_dists = None, resolution = resolution)
     nmi_condition_scinsight.append(bmk.nmi(group1 = np.concatenate(label_conditions), group2 = leiden_labels_conditions))
     ari_condition_scinsight.append(bmk.ari(group1 = np.concatenate(label_conditions), group2 = leiden_labels_conditions))
 print('NMI (scInsight): {:.3f}'.format(max(nmi_condition_scinsight)))
@@ -381,8 +381,9 @@ scores.to_csv(result_dir + "latent_score_2.csv")
 
 # In[] 
 # NOTE: Plot barplot of the scores if we have baseline
+from matplotlib.ticker import FormatStrFormatter
 if True:
-    plt.rcParams["font.size"] = 15
+    plt.rcParams["font.size"] = 20
     def show_values_on_bars(axs):
         def _show_on_single_plot(ax):        
             for p in ax.patches:
@@ -458,9 +459,17 @@ if True:
     fig = plt.figure(figsize = (20,5))
     ax = fig.subplots(nrows = 1, ncols = 4)
     sns.boxplot(data = scores_all, x = "methods", y = "NMI (common)", ax = ax[0])
+    ax[0].set_ylabel("NMI")
+    ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "ARI (common)", ax = ax[1])
+    ax[1].set_ylabel("ARI")
+    ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "GC (common)", ax = ax[2])
+    ax[2].set_ylabel("GC")
+    ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "Silhouette batch (common)", ax = ax[3])
+    ax[3].set_ylabel("Silhouette batch")
+    ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
     plt.tight_layout()
     fig.savefig(result_dir + "boxplot_common.png", bbox_inches = "tight")
@@ -468,11 +477,20 @@ if True:
     fig = plt.figure(figsize = (25,5))
     ax = fig.subplots(nrows = 1, ncols = 5)
     sns.boxplot(data = scores_all, x = "methods", y = "NMI (condition)", ax = ax[0])
+    ax[0].set_ylabel("NMI")
+    ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "ARI (condition)", ax = ax[1])
+    ax[1].set_ylabel("ARI")
+    ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "GC (condition)", ax = ax[2])
+    ax[2].set_ylabel("GC")
+    ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "Silhouette batch (condition & celltype)", ax = ax[3])
+    ax[3].set_ylabel("ASW (batch)")
+    ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     sns.boxplot(data = scores_all, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[4])
-
+    ax[4].set_ylabel("ASW (batch)")
+    ax[4].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     plt.tight_layout()
     fig.savefig(result_dir + "boxplot_condition.png", bbox_inches = "tight")
 
