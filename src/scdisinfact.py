@@ -88,6 +88,8 @@ class scdisinfact(nn.Module):
         self.seed = seed
         # device 
         self.device = device
+        # dataset
+        self.datasets = datasets
 
         if seed is not None:
             np.random.seed(seed)
@@ -104,7 +106,7 @@ class scdisinfact(nn.Module):
         self.uniq_batch_ids = []
 
         # loop through all data matrices/datasets
-        for idx, dataset in enumerate(datasets):
+        for idx, dataset in enumerate(self.datasets):
             assert self.n_diff_factors == len(dataset.diff_labels)
             # make sure that the genes are matched
             if idx == 0:
@@ -134,9 +136,9 @@ class scdisinfact(nn.Module):
 
         # unique diff labels for each diff factor
         for diff_factor in range(self.n_diff_factors):
-            self.uniq_diff_labels[diff_factor] = set(self.uniq_diff_labels[diff_factor]) 
+            self.uniq_diff_labels[diff_factor] = sorted(set(self.uniq_diff_labels[diff_factor])) 
         # unique data batches
-        self.uniq_batch_ids = set(self.uniq_batch_ids)
+        self.uniq_batch_ids = sorted(set(self.uniq_batch_ids))
 
         # create model
         # encoder for common biological factor
@@ -511,3 +513,100 @@ class scdisinfact(nn.Module):
                         #             trigger = 0                            
                         
         return loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests
+
+
+    def predict_counts(self, predict_dataset, predict_conds, predict_batch = None):
+        """\
+        Description:
+        -------------
+            Function for condition effect prediction.
+
+        Parameters:
+        -------------
+            predict_dataset:
+                the dataset for condition effect prediction
+            
+            predict_conds:
+                the condition label of the predicted dataset, 
+                predict_conds should have length equal to the number of condition type, 
+                and should have one condition group id for each condition type
+
+            predict_batch:
+                the batch id of the predicted dataset, default None, where batch_ids is kept the same as predict_dataset
+
+        Returns:
+        -------------
+            predicted counts
+        
+        """
+        # number of condition types should match
+        assert len(self.uniq_diff_labels) == len(predict_conds)        
+        # extract the condition type of predict_dataset
+        curr_conds = predict_dataset.diff_labels
+
+        with torch.no_grad():
+            diff_labels = [[] for x in range(self.n_diff_factors)]
+            z_ds_train = [[] for x in range(self.n_diff_factors)]
+
+            for dataset in self.datasets:
+                # infer latent factor on train dataset
+                dict_inf_train = self.inference(counts = dataset.counts_stand.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True, eval_model = True)
+                # extract unshared-bio factors
+                z_d = dict_inf_train["mu_d"]                
+                for diff_factor, diff_label in enumerate(dataset.diff_labels):
+                    # append condition label
+                    diff_labels[diff_factor].extend([x for x in diff_label])
+                    # append unshared-bio factor
+                    z_ds_train[diff_factor].append(z_d[diff_factor])
+
+            # infer latent factor on predict dataset
+            dic_inf_pred = self.inference(counts = predict_dataset.counts_stand.to(self.device), batch_ids = predict_dataset.batch_id[:, None].to(self.device), print_stat = True, eval_model = True)
+            z_ds_pred = dic_inf_pred["mu_d"]
+            
+            diff_labels = [np.array(x) for x in diff_labels]
+            z_ds_train = [torch.concat(x, dim = 0) for x in z_ds_train]   
+
+            # store the centroid z_ds for each condition groups
+            mean_zds = []
+            for diff_factor in range(self.n_diff_factors):
+
+                # calculate the centroid of condition groups under diff_factor
+                mean_zds.append(torch.concat([torch.mean(z_ds_train[diff_factor][diff_labels[diff_factor] == x], dim = 0, keepdim = True) for x in self.uniq_diff_labels[diff_factor]], dim = 0))
+                # predicted centroid, of the shape (ncells, ndims)
+                pred_mean = mean_zds[diff_factor][[predict_conds[diff_factor]] * curr_conds[diff_factor].shape[0]]
+                # current centroid, of the shape (ncells, ndims)
+                curr_mean = mean_zds[diff_factor][curr_conds[diff_factor]]
+                # differences
+                delta = pred_mean - curr_mean
+                # latent space arithmetics
+                z_ds_pred[diff_factor] = z_ds_pred[diff_factor] + delta
+
+            # generate data from the latent factors
+            if predict_batch is None:   
+                # predict_batch is kept the same         
+                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_dataset.batch_id[:,None].to(self.device))
+            else:
+                # predict_batch is given
+                batch_id = torch.tensor([[predict_batch] for x in range(predict_dataset.batch_id.shape[0])], device = self.device)
+                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = batch_id)
+
+        return dict_gen["mu"]
+ 
+
+    def extract_gene_scores(self):
+        """\
+        Description:
+        -------------
+            Extract the condition-associated gene scores
+        
+        Return:
+        -------------
+            list containing scores of genes under each condition type
+        """
+        # checked
+        scores = []
+        # loop through all condition types
+        for diff_factor in range(self.n_diff_factors):
+            scores.append(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight.detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:self.ngenes])
+        
+        return scores

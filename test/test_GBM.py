@@ -273,58 +273,70 @@ utils.plot_latent(zs = z_ds_umaps[0], annos = [x["mstatus"].values.squeeze() for
 # # sns.stripplot(x="score", data = key_genes3, color="green", edgecolor="gray", size = 3)
 # fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
 
+
 # In[] Test imputation accuracy
-z_cs = []
-z_ds = []
-zs = []
-treatment_labels = []
+# z_cs = []
+# z_ds = []
+# zs = []
+# treatment_labels = []
+# X_scdisinfact_impute = []
+# with torch.no_grad():
+#     for batch_id, dataset in enumerate(datasets_array):
+#         treatment_labels.append(treatments[dataset.diff_labels[0].numpy()])
+#         # pass through the encoders
+#         dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+#         # pass through the decoder
+#         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+#         z_c = dict_inf["mu_c"]
+#         z_d = dict_inf["mu_d"]
+#         z = torch.cat([z_c] + z_d, dim = 1)
+#         mu = dict_gen["mu"]
+#         z_cs.append(z_c.cpu().detach().numpy())
+#         zs.append(z.cpu().detach().numpy())
+#         z_ds.append([x.cpu().detach().numpy() for x in z_d])   
+
+# treatment_labels = np.concatenate(treatment_labels, axis = 0)
+# z_ds = np.concatenate([x[0] for x in z_ds], axis = 0)
+
+# mean_ctrl = np.mean(z_ds[treatment_labels == "vehicle (DMSO)"], axis = 0)[None,:]
+# mean_stim = np.mean(z_ds[treatment_labels == "0.2 uM panobinostat"], axis = 0)[None,:]
+# delta_stim_ctrl = mean_ctrl - mean_stim
+# delta_ctrl_ctrl = mean_ctrl - mean_ctrl
+
+# with torch.no_grad():
+#     # removed of batch effect
+#     ref_batch = 0.0
+#     for batch_id, dataset in enumerate(datasets_array):
+#         # still use the original batch_id as input, not change the latent embedding
+#         z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+#         z_d = []
+#         for Enc_d in model.Enc_ds:
+#             # still use the original batch_id as input, not change the latent embedding
+#             _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
+#             # control: 0, stimulation: 1
+#             _z_d[dataset.diff_labels[0] == 0] = _z_d[dataset.diff_labels[0] == 0] + torch.from_numpy(delta_ctrl_ctrl).to(model.device)
+#             _z_d[dataset.diff_labels[0] == 1] = _z_d[dataset.diff_labels[0] == 1] + torch.from_numpy(delta_stim_ctrl).to(model.device)
+#             z_d.append(_z_d)        
+
+#         # change the batch_id into ref batch as input
+#         z = torch.concat([z_c] + z_d + [torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None]], axis = 1)        
+
+#         # NOTE: change the batch_id into ref batch as input, change the diff condition into control
+#         mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
+#         X_scdisinfact_impute.append(mu_impute.cpu().detach().numpy())
+
+# X_scdisinfact_impute = np.concatenate(X_scdisinfact_impute)
+
+# checked, produce the same result as above
+pred_conds = [np.where(treatments == "vehicle (DMSO)")[0][0]]
 X_scdisinfact_impute = []
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets_array):
-        treatment_labels.append(treatments[dataset.diff_labels[0].numpy()])
-        # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-        # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-        z_c = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
-        mu = dict_gen["mu"]
-        z_cs.append(z_c.cpu().detach().numpy())
-        zs.append(z.cpu().detach().numpy())
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])   
 
-treatment_labels = np.concatenate(treatment_labels, axis = 0)
-z_ds = np.concatenate([x[0] for x in z_ds], axis = 0)
-
-mean_ctrl = np.mean(z_ds[treatment_labels == "vehicle (DMSO)"], axis = 0)[None,:]
-mean_stim = np.mean(z_ds[treatment_labels == "0.2 uM panobinostat"], axis = 0)[None,:]
-delta_stim_ctrl = mean_ctrl - mean_stim
-delta_ctrl_ctrl = mean_ctrl - mean_ctrl
-
-with torch.no_grad():
-    # removed of batch effect
-    ref_batch = 0.0
-    for batch_id, dataset in enumerate(datasets_array):
-        # still use the original batch_id as input, not change the latent embedding
-        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-        z_d = []
-        for Enc_d in model.Enc_ds:
-            # still use the original batch_id as input, not change the latent embedding
-            _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-            # control: 0, stimulation: 1
-            _z_d[dataset.diff_labels[0] == 0] = _z_d[dataset.diff_labels[0] == 0] + torch.from_numpy(delta_ctrl_ctrl).to(model.device)
-            _z_d[dataset.diff_labels[0] == 1] = _z_d[dataset.diff_labels[0] == 1] + torch.from_numpy(delta_stim_ctrl).to(model.device)
-            z_d.append(_z_d)        
-
-        # change the batch_id into ref batch as input
-        z = torch.concat([z_c] + z_d + [torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None]], axis = 1)        
-
-        # NOTE: change the batch_id into ref batch as input, change the diff condition into control
-        mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
-        X_scdisinfact_impute.append(mu_impute.cpu().detach().numpy())
+for batch_id, dataset in enumerate(datasets_array):
+    X = model.predict_counts(predict_dataset = dataset, predict_conds = pred_conds, predict_batch = 0)
+    X_scdisinfact_impute.append(X.detach().cpu().numpy())
 
 X_scdisinfact_impute = np.concatenate(X_scdisinfact_impute)
+
 
 # In[] Calculate batch mixing score
 # normalization
