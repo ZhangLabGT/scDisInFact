@@ -97,7 +97,9 @@ for batch_id, batch_name in enumerate(batch_names):
     meta_cells_array.append(adata_batch.obs)
     datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
 
-    print(len(datasets_array[-1]))
+    print(f"current batch: {batch_id}")
+    print(f"number of cells: {len(datasets_array[-1])}")
+    print(f"unique conditions: {np.unique(severity_ids[batch_ids == batch_id])}")
 
 # # In[] Check the batch effect: 1. among batches; 2. among patients
 # from sklearn.decomposition import PCA

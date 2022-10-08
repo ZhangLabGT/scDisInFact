@@ -607,6 +607,6 @@ class scdisinfact(nn.Module):
         scores = []
         # loop through all condition types
         for diff_factor in range(self.n_diff_factors):
-            scores.append(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight.detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:self.ngenes])
+            scores.append(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight.detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:self.ngenes].numpy())
         
         return scores
