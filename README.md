@@ -22,6 +22,7 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
     scipy >- 1.7.3
     matplotlib >= 3.5.2
     umap >= 0.5.2
+    igraph >= 0.9.9
     adjustText >= 0.7.3 (optional)
 ```
 
