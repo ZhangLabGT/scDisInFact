@@ -6,11 +6,11 @@ scDisInFact is a single-cell data integration and condition effect prediction fr
 * Detect condition-associated key genes for each condition type.
 * Predict the condition effect on gene expression data (Perturbation prediction) and remove the batch effect in gene expression data.
 
-<img src = "figures/figure1.png" width = 900ptx>
+<img src = "figures/figure1.png" width = 700ptx>
 
 scDisInFact is designed using a conditional variational autoencoder framework. See figure below for the network structure of scDisInFact:
 
-<img src = "figures/figure2.png" width = 900ptx>
+<img src = "figures/figure2.png" width = 700ptx>
 
 ### Dependency
 ```
