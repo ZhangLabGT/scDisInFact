@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import StandardScaler
 from torch.autograd import Variable
+import pandas as pd
+import scipy.sparse as sp
 
 sys.path.append(".")
 import model
@@ -14,7 +16,7 @@ import loss_function as loss_func
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-class dataset(Dataset):
+class scdisinfact_dataset(Dataset):
 
     def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id = None, normalize = True):
         """
@@ -63,14 +65,164 @@ class dataset(Dataset):
         return sample
 
 
+def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, batch_key, batch_cond_key = None):
+    """\
+    Description:
+    --------------
+        Create scDisInFact dataset using count matrices and meta data
+    
+    Parameters:
+    --------------
+        counts: 
+            Input count matrix: can be one numpy count matrix including all data batches, or a list of count matrices. 
+            Accept ``scipy.sparse.csr_matrix'' or ``numpy.array'' for count matrix format. 
+            Count matrix should be of the shape (ncells, ngenes), and gene should match between different count matrices.
+
+        meta_cells:
+            Inpute dataframe/list of dataframe that includes the meta-information of each cell in count matrices. 
+            The cell should match that of ``counts''
+        
+        meta_data
+            Inpute dataframe of dataframe that includes the meta-information of each gene in counts.
+            
+        condition_key:
+            List of column labels in the ``meta_cells'' that corresponds to condition groups in different condition types.
+
+        batch_key:
+            The column label in the ``meta_cells'' that correspond to batches
+        
+        batch_cond_key:
+            The column label in the ``meta_cells'' that correspond to batch-condition pairs. 
+            The batch-condition pairs gives a unique label for each condition group under each data batch.
+            Batch-condition pair is automatically calculated from the batch and condition labels when ``batch_cond_key'' is None.
+            ``batch_cond_key'' is None by default.
+
+    Return:
+    --------------
+        datasets_array: 
+            an array of scdisinfact datasets
+        meta_cells_array:
+            an array of meta cells (match datasets)
+
+    """
+    # Sanity check
+    print("Sanity check...")
+    if type(counts) == list:
+        # check the meta_cells should also be list
+        assert type(meta_cells) == list
+        # check the length of counts match that of meta_cells
+        assert len(counts) == len(meta_cells)
+        for i in range(len(counts)):
+            # check the number of cells in each count matrix match that of each meta_cells
+            assert counts[i].shape[0] == meta_cells[i].shape[0]
+            # check the number of genes in each count matrix match that of meta_genes
+            assert counts[i].shape[1] == meta_genes.shape[0]
+            # check the condition_key is in the columns of meta_cells
+            for cond in condition_key:
+                assert cond in meta_cells[i].columns
+            # check the batch_key is in the columns of meta_cells
+            assert batch_key in meta_cells[i].columns
+    else:
+        # should include the same number of cells
+        assert counts.shape[0] == meta_cells.shape[0]
+        # should include the same set of genes
+        assert counts.shape[1] == meta_genes.shape[0]
+        for cond in condition_key:
+            assert cond in meta_cells.columns
+        # check the batch_key is in the columns of meta_cells
+        assert batch_key in meta_cells.columns
+        if batch_cond_key is not None:
+            # check if the batch_cond_key is in meta_cells columns
+            assert batch_cond_key in meta_cells.columns
+    print("Finished.")
+
+    print("Create scDisInFact datasets...")
+    # concatenate the count matrices and meta_cells if they are lists
+    if type(counts) == list:
+        if sp.issparse(counts[0]):
+            counts = sp.vstack(counts)
+        else:
+            counts = np.concatenate(counts, axis = 0)
+        meta_cells = pd.concat(meta_cells, axis = 0)
+
+    # construct batch_cond pairs that combine batch id with condition types
+    if batch_cond_key is None:
+        meta_cells['batch_cond'] = meta_cells[[batch_key] + condition_key].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+    else:
+        meta_cells['batch_cond'] = meta_cells[batch_cond_key].values
+    # transfer label to ids
+    cond_ids = []
+    cond_names = []
+    for cond in condition_key:
+        cond_id, cond_name = pd.factorize(meta_cells[cond].values.squeeze())
+        cond_ids.append(cond_id)
+        cond_names.append(cond_name)
+    
+    batch_ids, batch_names = pd.factorize(meta_cells[batch_key].values.squeeze())
+    batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze())
+
+    datasets_array = []
+    counts_array = []
+    meta_cells_array = []
+    for batch_cond_id, batch_cond_name in enumerate(batch_cond_names):
+        if sp.issparse(counts):
+            counts_array.append(counts[batch_cond_ids == batch_cond_id, :].toarray())
+        else:
+            counts_array.append(counts[batch_cond_ids == batch_cond_id, :])
+
+        meta_cells_array.append(meta_cells.iloc[batch_cond_ids == batch_cond_id, :])
+        datasets_array.append(scdisinfact_dataset(counts = counts_array[-1], anno = None, 
+                                                  diff_labels = [x[batch_cond_ids == batch_cond_id] for x in cond_ids], 
+                                                  batch_id = batch_ids[batch_cond_ids == batch_cond_id],
+                                                  mmd_batch_id = batch_cond_ids[batch_cond_ids == batch_cond_id]
+                                                ))
+    print("Finished.")
+
+    return datasets_array, meta_cells_array
+
 class scdisinfact(nn.Module):
     """\
     Description:
     --------------
-        New model that separate the encoder and control backward gradient. (VARIATIONAL AUTOENCODER)
-
+        Implementation of scDisInFact
+    
+    Parameters:
+    --------------
+        datasets:
+            list of input scdisinfact dataset
+        reg_mmd_comm:
+            regularization weight of MMD loss on shared-bio factor, default value is 1e-4
+        reg_mmd_diff:
+            regularization weight of MMD loss on unshared-bio factor, default value is 1e-4
+        reg_gl:
+            regularization weight of group lasso loss, default value is 1
+        reg_class:
+            regularization weight of classification loss, default value is 1
+        reg_tc:
+            regularization weight of total correlation loss, default value is 0.5
+        reg_kl:
+            regularization weight of KL-divergence
+        Ks:
+            dimensions of latent factors, arranged following: (shared-bio factor, unshared-bio factor 1, ..., unshared-bio factor n), default value is [8,4]
+        batch_size:
+            size of mini-batch in stochastic gradient descent, default value is 64
+        interval:
+            number of epochs between each result printing, default 10
+        lr:
+            learning rate, default 5e-4
+        seed:
+            seed for reproducing the result, default is 0
+        device:
+            training device
+    
+    Examples:
+    --------------
+    >>> model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = [8,4], batch_size = 8, interval = 10, lr = 5e-4, 
+                                reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_tc = 0.5, 
+                                reg_kl = 1e-6, reg_class = 1, seed = 0, device = torch.device("cuda:0"))
+    >>> model.train_model(nepochs = 100, recon_loss = "NB", reg_contr = 0.01)
     """
-    def __init__(self, datasets, reg_mmd_comm, reg_mmd_diff, reg_gl, reg_class = 1, reg_tc = 0.1, reg_kl = 1e-6, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, device = device):
+    def __init__(self, datasets, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, reg_tc = 0.5, reg_kl = 1e-6, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, device = device):
         super().__init__()
         # initialize the parameters
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
@@ -221,6 +373,29 @@ class scdisinfact(nn.Module):
             
 
     def generative(self, z_c, z_d, batch_ids):
+        """\
+        Description:
+        --------------
+            generating high-dimensional data from shared-bio, unshared-bio factors
+        
+        Parameters:
+        --------------
+            z_c:
+                shared-bio factor, of the shape (ncells, nlatents)
+            z_d:
+                list of unshared-bio factors, where one element correspond to unshared-bio factor of one condition type, each factor is of the shape (ncells, nlatents)
+            batch_ids:
+                the batch ids, of the shape (ncells, 1)
+        
+        Return:
+        --------------
+            dictionary of generative output:
+                "mu": the mean of NB distribution, used as prediction/reconstruction result
+                "theta": the dispersion parameter of NB distribution
+                "z_pred": the prediction output of classifier
+                "y_orig": the discriminator output of original samples
+                "y_perm": the discriminator output of permuted samples
+        """
         # sanity check
         assert len(z_d) == self.n_diff_factors
         # decoder
@@ -244,8 +419,12 @@ class scdisinfact(nn.Module):
         return {"mu": mu, "pi": pi, "theta": theta, "z_pred": z_pred, "y_orig": y_orig, "y_perm": y_perm}
     
     def loss(self, dict_inf, dict_gen, size_factor, count, batch_id, diff_labels, recon_loss):
-        
-
+        """\
+        Decription:
+        --------------
+            loss function of scDisInFact
+          
+        """
         ce_loss = nn.CrossEntropyLoss(reduction = 'mean')
         contr_loss = loss_func.CircleLoss(m=0.25, gamma=80)
 
@@ -296,6 +475,17 @@ class scdisinfact(nn.Module):
 
 
     def train_model(self, nepochs = 50, recon_loss = "NB", reg_contr = 0.0):
+        """\
+        Decription:
+        -------------
+            Training function of scDisInFact
+        
+        Parameters:
+        -------------
+            nepochs: number of epochs
+            recon_loss: choose from "NB", "ZINB", "MSE"
+            reg_contr: regulation weight of contrastive loss
+        """
         best_loss = 1e3
         trigger = 0
         clamp_comm = 0.01

@@ -48,7 +48,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-result_dir = "GBM_treatment/Fig4_patient_minibatch64/"
+result_dir = "GBM_treatment/Fig4_patient_minibatch8/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -75,16 +75,20 @@ meta_cells_array = []
 for sample_id, sample_name in enumerate(sample_names):
     counts_array.append(counts[sample_ids == sample_id, :].toarray())
     meta_cells_array.append(meta_cell.iloc[sample_ids == sample_id, :])
-    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, 
+    datasets_array.append(scdisinfact.scdisinfact_dataset(counts = counts_array[-1], anno = None, 
                                               diff_labels = [treatment_id[sample_ids == sample_id]], 
                                               # use sample_ids instead of patient_ids
                                               batch_id = patient_ids[sample_ids == sample_id],
                                               # batch_id = sample_ids[sample_ids == sample_id], 
                                               mmd_batch_id = sample_ids[sample_ids == sample_id]
                                               ))
+    
     print(len(datasets_array[-1]))
     print(torch.unique(datasets_array[-1].batch_id))
     print(torch.unique(datasets_array[-1].mmd_batch_id))
+
+
+datasets_array, meta_cells_array = scdisinfact.create_scdisinfact_dataset(counts, meta_cell, condition_key = ["treatment"], batch_key = "patient_id", batch_cond_key = "sample_id", meta_genes = genes)
 
 # In[] Visualize the original count matrix
 
@@ -94,17 +98,17 @@ x_pca = PCA(n_components = 80).fit_transform(np.concatenate([x.counts_norm for x
 x_umap = umap_op.fit_transform(x_pca)
 # separate into batches
 x_umaps = []
-for batch, _ in enumerate(counts_array):
+for batch, _ in enumerate(meta_cells_array):
     if batch == 0:
         start_pointer = 0
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps.append(x_umap[start_pointer:end_pointer,:])
-    elif batch == (len(counts_array) - 1):
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+    elif batch == (len(meta_cells_array) - 1):
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
         x_umaps.append(x_umap[start_pointer:,:])
     else:
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps.append(x_umap[start_pointer:end_pointer,:])
 
 save_file = None
@@ -142,7 +146,7 @@ nepochs = 200
 interval = 10
 start_time = time.time()
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 8, interval = interval, lr = 5e-4, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
@@ -354,6 +358,7 @@ fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
 
 # checked, produce the same result as above
 pred_conds = [np.where(treatments == "vehicle (DMSO)")[0][0]]
+# pred_conds = 0
 X_scdisinfact_impute = []
 
 for batch_id, dataset in enumerate(datasets_array):
@@ -374,17 +379,17 @@ umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state
 x_umap_scdisinfact = umap_op.fit_transform(x_pca_scdisinfact)
 # separate into batches
 x_umaps_scdisinfact = []
-for batch, _ in enumerate(counts_array):
+for batch, _ in enumerate(meta_cells_array):
     if batch == 0:
         start_pointer = 0
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scdisinfact.append(x_umap_scdisinfact[start_pointer:end_pointer,:])
-    elif batch == (len(counts_array) - 1):
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+    elif batch == (len(meta_cells_array) - 1):
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
         x_umaps_scdisinfact.append(x_umap_scdisinfact[start_pointer:,:])
     else:
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scdisinfact.append(x_umap_scdisinfact[start_pointer:end_pointer,:])
 
 utils.plot_latent(x_umaps_scdisinfact, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + comment + "predict_batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
@@ -399,7 +404,7 @@ utils.plot_latent(x_umaps_scdisinfact, annos = [x["mstatus"].values.squeeze() fo
 
 # In[]
 # normalization for scGEN
-X_scgen_impute = sp.load_npz(result_dir + "scGEN/counts_scgen.npz").toarray()
+X_scgen_impute = sp.load_npz("GBM_treatment/Fig4_minibatch8/scGEN/counts_scgen.npz").toarray()
 X_scgen_impute = (X_scgen_impute >= 0) * X_scgen_impute
 X_scgen_impute_norm = X_scgen_impute/(np.sum(X_scgen_impute, axis = 1, keepdims = True) + 1e-6) * 100
 X_scgen_impute_norm = np.log1p(X_scgen_impute_norm)
@@ -410,17 +415,17 @@ umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state
 x_umap_scgen = umap_op.fit_transform(x_pca_scgen)
 # separate into batches
 x_umaps_scgen = []
-for batch, _ in enumerate(counts_array):
+for batch, _ in enumerate(meta_cells_array):
     if batch == 0:
         start_pointer = 0
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scgen.append(x_umap_scgen[start_pointer:end_pointer,:])
-    elif batch == (len(counts_array) - 1):
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+    elif batch == (len(meta_cells_array) - 1):
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
         x_umaps_scgen.append(x_umap_scgen[start_pointer:,:])
     else:
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scgen.append(x_umap_scgen[start_pointer:end_pointer,:])
 
 utils.plot_latent(x_umaps_scgen, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scGEN/predict_batches.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
@@ -435,7 +440,7 @@ utils.plot_latent(x_umaps_scgen, annos = [x["mstatus"].values.squeeze() for x in
 
 # In[]
 # normalization for scPreGAN
-X_scpregan_impute = sp.load_npz(result_dir + "scPreGAN/counts_scpregan.npz").toarray()
+X_scpregan_impute = sp.load_npz("GBM_treatment/Fig4_minibatch8/scPreGAN/counts_scpregan.npz").toarray()
 X_scpregan_impute = (X_scpregan_impute >= 0) * X_scpregan_impute
 X_scpregan_impute_norm = X_scpregan_impute/(np.sum(X_scpregan_impute, axis = 1, keepdims = True) + 1e-6) * 100
 X_scpregan_impute_norm = np.log1p(X_scpregan_impute_norm)
@@ -446,17 +451,17 @@ umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state
 x_umap_scpregan = umap_op.fit_transform(x_pca_scpregan)
 # separate into batches
 x_umaps_scpregan = []
-for batch, _ in enumerate(counts_array):
+for batch, _ in enumerate(meta_cells_array):
     if batch == 0:
         start_pointer = 0
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scpregan.append(x_umap_scpregan[start_pointer:end_pointer,:])
-    elif batch == (len(counts_array) - 1):
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+    elif batch == (len(meta_cells_array) - 1):
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
         x_umaps_scpregan.append(x_umap_scpregan[start_pointer:,:])
     else:
-        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_array[batch].shape[0]
+        start_pointer = start_pointer + meta_cells_array[batch - 1].shape[0]
+        end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scpregan.append(x_umap_scpregan[start_pointer:end_pointer,:])
 
 utils.plot_latent(x_umaps_scpregan, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scPreGAN/predict_batches.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)

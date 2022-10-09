@@ -59,16 +59,19 @@ for sample_id, sample_name in enumerate(sample_names):
 label_conditions_train = []
 label_batches_train = []
 label_annos_train = []
+label_patients_train = []
 for sample_id, sample_name in enumerate(sample_names):
     label_conditions_train.append(meta_cells_array[sample_id]["treatment"].values.squeeze())
     label_batches_train.append(meta_cells_array[sample_id]["sample_id"].values.squeeze())
     label_annos_train.append(meta_cells_array[sample_id]["mstatus"].values.squeeze())
+    label_patients_train.append(meta_cells_array[sample_id]["patient_id"].values.squeeze())
 
 counts_train = np.concatenate(counts_array, axis = 0)
-meta_obs_train = pd.DataFrame(columns = ["condition", "cell_type", "batch_id"])
+meta_obs_train = pd.DataFrame(columns = ["condition", "cell_type", "batch_id", "patient_id"])
 meta_obs_train["condition"] = np.concatenate(label_conditions_train, axis = 0)
 meta_obs_train["cell_type"] = np.concatenate(label_annos_train, axis = 0)
 meta_obs_train["batch_id"] = np.concatenate(label_batches_train, axis = 0)
+meta_obs_train["patient_id"] = np.concatenate(label_patients_train, axis = 0)
 adata_train = AnnData(X = counts_train, obs = meta_obs_train)
 
 # preprocessing, normalize the count

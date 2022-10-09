@@ -23,7 +23,7 @@ diff = 2
 ngenes = 500
 ncells_total = 10000 
 n_batches = 6
-data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+data_dir = f"../data/simulated/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 # In[]
 result_dir = "./simulated/runtime/"

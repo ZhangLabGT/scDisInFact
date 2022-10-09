@@ -70,9 +70,9 @@ setwd("/localscratch/ziqi/scDisInFact/test/")
 # Symsim datasets
 #
 ################################################################################
-dataset <- "imputation_10000_500_0.4_50_2"
-data_dir <- paste0("../data/simulated_new/", dataset,"/")
-result_dir <- paste0("./simulated/imputation_new/", dataset, "/")
+dataset <- "1condition_10000_500_0.4_50_2"
+data_dir <- paste0("../data/simulated/", dataset,"/")
+result_dir <- paste0("./simulated/prediction/", dataset, "/")
 dir.create(file.path(result_dir, "scinsight_2/"), showWarnings = FALSE)
 
 GxC1 <- as.matrix(read.table(paste0(data_dir, "GxC1_ctrl.txt"), sep = "\t"))

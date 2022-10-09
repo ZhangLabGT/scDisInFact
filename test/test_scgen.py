@@ -15,10 +15,10 @@ from anndata import AnnData
 # ngenes = 500
 # ncells_total = 10000 
 # n_batches = 6
-# data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# data_dir = f"../data/simulated/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 n_batches = 6
-data_dir = f"../data/simulated_new/" + sys.argv[1] + "/"
+data_dir = f"../data/simulated/" + sys.argv[1] + "/"
 
 # TODO: randomly remove some celltypes?
 counts_ctrls = []
@@ -60,8 +60,8 @@ for batch_id in range(n_batches):
 # 1, 2, 5, 6, and impute the control for batches 5, 6.
 #
 #------------------------------------------------------------------------------------------------------------------------------------------
-# result_dir = f"./simulated/imputation_new/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/scGEN_scenario1/"
-result_dir = f"./simulated/imputation_new/" + sys.argv[1] + "/scGEN_scenario1/"
+# result_dir = f"./simulated/prediction/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/scGEN_scenario1/"
+result_dir = f"./simulated/prediction/" + sys.argv[1] + "/scGEN_scenario1/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -158,8 +158,8 @@ for batch_id in [2,3,4,5]:
 # 2. batch 1 with control and stimulation 2, batches 2, 3, 4, 5, 6 only have control.
 # Impute the stimulation 2 for batches 2, 3, 4, 5, 6.
 #------------------------------------------------------------------------------------------------------------------------------------------
-# result_dir = f"./simulated/imputation_new/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/scGEN_scenario2/"
-result_dir = f"./simulated/imputation_new/" + sys.argv[1] + "/scGEN_scenario2/"
+# result_dir = f"./simulated/prediction/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/scGEN_scenario2/"
+result_dir = f"./simulated/prediction/" + sys.argv[1] + "/scGEN_scenario2/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 # 1. batch 1 with control and stimulation 1, batches 2, 3, 4, 5, 6 only have control. 

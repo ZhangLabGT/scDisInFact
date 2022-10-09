@@ -28,14 +28,14 @@ from sklearn.metrics import r2_score
 # ngenes = 500
 # ncells_total = 10000 
 # n_batches = 6
-# data_dir = f"../data/simulated/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-# result_dir = f"./simulated/imputation_new/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# data_dir = f"../data/simulated/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# result_dir = f"./simulated/prediction/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 # if not os.path.exists(result_dir):
 #     os.makedirs(result_dir)
 
-data_dir = f"../data/simulated_new/" + sys.argv[1] + "/"
+data_dir = f"../data/simulated/" + sys.argv[1] + "/"
 # lsa performs the best
-result_dir = f"./simulated/imputation_new/" + sys.argv[1] + "/"
+result_dir = f"./simulated/prediction/" + sys.argv[1] + "/"
 n_diff_genes = eval(sys.argv[1].split("_")[4])
 n_batches = 6
 if not os.path.exists(result_dir):
@@ -236,7 +236,7 @@ for diff_factor in range(model.n_diff_factors):
     utils.plot_latent(zs = z_ds_umaps[diff_factor], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+f"diff{diff_factor}_batch.png" if result_dir else None, markerscale = 6, s = 5)
     utils.plot_latent(zs = z_ds_umaps[diff_factor], annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+f"diff{diff_factor}_condition.png" if result_dir else None, markerscale = 6, s = 5)
 
-# In[] Extract imputation matrix of scGEN and scDisInFact
+# In[] Extract predicted matrix of scGEN and scDisInFact
 plt.rcParams["font.size"] = 15
 np.random.seed(0)
 
@@ -702,7 +702,7 @@ for batch in range(4):
 # utils.plot_latent(zs = z_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_batches_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
 # utils.plot_latent(zs = z_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
 
-# # NOTE: visualize only the diff dimension, the diff dimension should mix between batches for correct imputation
+# # NOTE: visualize only the diff dimension, the diff dimension should mix between batches for correct prediction
 # utils.plot_latent(zs = z_ds_impute_umaps, annos = label_conditions, mode = "separate", axis_label = "UMAP", figsize = (5,13), save = None, markerscale = 6, s = 3)
 
 # NOTE: visualize the imputed results
@@ -782,17 +782,17 @@ if True:
     noise_levels = []
     ndiff_genes = []
     ndiffs = []
-    result_dir = "./simulated/imputation_new/"
+    result_dir = "./simulated/prediction/"
     # for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.3_20_2", "0.3_50_2", "0.3_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2","0.2_20_4", "0.2_20_8", "0.3_20_4", "0.3_20_8", "0.4_20_4", "0.4_20_8"]:
     for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.2_20_4", "0.2_50_4", "0.2_100_4", "0.2_20_8", "0.2_50_8", "0.2_100_8"]:
         noise_level, ndiff_gene, ndiff = dataset.split("_")
 
         # cell-level    
-        score_cell = pd.read_csv(result_dir + "imputation_10000_500_" + dataset + "/scores_cell_specific.csv", index_col = 0)
+        score_cell = pd.read_csv(result_dir + "1condition_10000_500_" + dataset + "/scores_cell_specific.csv", index_col = 0)
         scores_cell = pd.concat((scores_cell, score_cell), axis = 0)
 
         # cluster-level
-        score_cluster = pd.read_csv(result_dir + "imputation_10000_500_" + dataset + "/scores_cluster_specific.csv", index_col = 0)
+        score_cluster = pd.read_csv(result_dir + "1condition_10000_500_" + dataset + "/scores_cluster_specific.csv", index_col = 0)
         scores_cluster = pd.concat((scores_cluster, score_cluster), axis = 0)
 
 
@@ -847,7 +847,7 @@ if True:
 
 
 
-# In[] Test imputation accuracy, old for reference
+# In[] Test prediction accuracy, old for reference
 '''
 plt.rcParams["font.size"] = 15
 # one forward pass

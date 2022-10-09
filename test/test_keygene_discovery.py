@@ -159,21 +159,21 @@ nepochs = 50
 interval = 10
 n_batches = 6
 
-data_dir = f"../data/simulated_new/"
+data_dir = f"../data/simulated/"
 
 # In[] by number of ndiff_genes
 plt.rcParams["font.size"] = 20
 
 simulated_lists = [
- 'imputation_10000_500_0.2_20_2',
- 'imputation_10000_500_0.3_20_2',
- 'imputation_10000_500_0.4_20_2',
- 'imputation_10000_500_0.2_50_2',
- 'imputation_10000_500_0.3_50_2',
- 'imputation_10000_500_0.4_50_2',
- 'imputation_10000_500_0.2_100_2',
- 'imputation_10000_500_0.3_100_2',
- 'imputation_10000_500_0.4_100_2'  
+ '1condition_10000_500_0.2_20_2',
+ '1condition_10000_500_0.3_20_2',
+ '1condition_10000_500_0.4_20_2',
+ '1condition_10000_500_0.2_50_2',
+ '1condition_10000_500_0.3_50_2',
+ '1condition_10000_500_0.4_50_2',
+ '1condition_10000_500_0.2_100_2',
+ '1condition_10000_500_0.3_100_2',
+ '1condition_10000_500_0.4_100_2'  
  ]
 
 auprc_dict = pd.DataFrame(columns = ["dataset", "ndiff_genes", "AUPRC", "AUPRC ratio", "method", "ndiff"])
@@ -183,7 +183,7 @@ for dataset_dir in simulated_lists:
     ndiff = eval(dataset_dir.split("_")[5])
     gt = np.zeros((1, ngenes))
     gt[:,:ndiff_genes] = 1
-    result_dir = './simulated/imputation_new/'+dataset_dir + "/"
+    result_dir = './simulated/prediction/'+dataset_dir + "/"
     model_params = torch.load(result_dir + f"model_{Ks}_{lambs}.pth")
     inf = np.array(model_params["Enc_ds.0.fc.fc_layers.Layer 0.0.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:ngenes])
 
@@ -265,21 +265,21 @@ ax.set_xlabel("Number of perturbed genes")
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')
 
-fig.savefig("./simulated/imputation_new/AUPRC (ndiff_genes).png", bbox_inches = "tight")
+fig.savefig("./simulated/prediction/AUPRC (ndiff_genes).png", bbox_inches = "tight")
     
 # In[] by number of ndiff_genes
 plt.rcParams["font.size"] = 20
 
 simulated_lists = [
- 'imputation_10000_500_0.2_20_2',
- 'imputation_10000_500_0.3_20_2',
- 'imputation_10000_500_0.4_20_2',
- 'imputation_10000_500_0.2_20_4',
- 'imputation_10000_500_0.3_20_4',
- 'imputation_10000_500_0.4_20_4',
- 'imputation_10000_500_0.2_20_8',
- 'imputation_10000_500_0.3_20_8',
- 'imputation_10000_500_0.4_20_8'  
+ '1condition_10000_500_0.2_20_2',
+ '1condition_10000_500_0.3_20_2',
+ '1condition_10000_500_0.4_20_2',
+ '1condition_10000_500_0.2_20_4',
+ '1condition_10000_500_0.3_20_4',
+ '1condition_10000_500_0.4_20_4',
+ '1condition_10000_500_0.2_20_8',
+ '1condition_10000_500_0.3_20_8',
+ '1condition_10000_500_0.4_20_8'  
  ]
 
 auprc_dict = pd.DataFrame(columns = ["dataset", "ndiff_genes", "AUPRC", "AUPRC ratio", "method", "ndiff"])
@@ -289,7 +289,7 @@ for dataset_dir in simulated_lists:
     ndiff = eval(dataset_dir.split("_")[5])
     gt = np.zeros((1, ngenes))
     gt[:,:ndiff_genes] = 1
-    result_dir = './simulated/imputation_new/'+dataset_dir + "/"
+    result_dir = './simulated/prediction/'+dataset_dir + "/"
     model_params = torch.load(result_dir + f"model_{Ks}_{lambs}.pth")
     inf = np.array(model_params["Enc_ds.0.fc.fc_layers.Layer 0.0.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:ngenes])
     auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
@@ -371,7 +371,7 @@ ax.set_xlabel("Perturbation parameters")
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')    
 
-fig.savefig("./simulated/imputation_new/AUPRC (ndiffs).png", bbox_inches = "tight")
+fig.savefig("./simulated/prediction/AUPRC (ndiffs).png", bbox_inches = "tight")
 
 
 # %%

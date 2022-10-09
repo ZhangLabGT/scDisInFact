@@ -10,8 +10,8 @@ setwd("/localscratch/ziqi/scDisInFact/test/")
 # Symsim datasets
 #
 ################################################################################
-dataset <- "imputation_10000_500_0.2_20_2"
-data_dir <- paste0("../data/simulated_new/", dataset,"/")
+dataset <- "1condition_10000_500_0.2_20_2"
+data_dir <- paste0("../data/simulated/", dataset,"/")
 result_dir <- "./simulated/runtime/"
 
 times.total <- c()

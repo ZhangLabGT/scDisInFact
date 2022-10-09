@@ -25,14 +25,14 @@ warnings.filterwarnings('ignore')
 # ngenes = 500
 # ncells_total = 10000 
 # n_batches = 6
-# data_dir = f"../data/simulated_new/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-# result_dir = f"./simulated/imputation_new/imputation_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# data_dir = f"../data/simulated_new/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+# result_dir = f"./simulated/prediction/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 # if not os.path.exists(result_dir):
 #     os.makedirs(result_dir)
 
-data_dir = f"../data/simulated_new/" + sys.argv[1] + "/"
+data_dir = f"../data/simulated/" + sys.argv[1] + "/"
 # lsa performs the best
-result_dir = f"./simulated/imputation_new/" + sys.argv[1] + "/"
+result_dir = f"./simulated/prediction/" + sys.argv[1] + "/"
 n_diff_genes = eval(sys.argv[1].split("_")[4])
 n_batches = 6
 if not os.path.exists(result_dir):
@@ -399,10 +399,10 @@ if True:
             _show_on_single_plot(axs)
 
     scores_all = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "GC (common)", "GC (condition)", "Silhouette batch (common)", "Silhouette batch (condition & celltype)", "Silhouette batch (condition & batches)"])
-    result_dir = "./simulated/imputation_new/"
+    result_dir = "./simulated/prediction/"
     for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.2_20_4", "0.2_50_4", "0.2_100_4", "0.2_20_8", "0.2_50_8", "0.2_100_8"]:
     # for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.3_20_2", "0.3_50_2", "0.3_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2"]:
-        score = pd.read_csv(result_dir + "imputation_10000_500_" + dataset + "/latent_score_2.csv", index_col = 0)
+        score = pd.read_csv(result_dir + "1condition_10000_500_" + dataset + "/latent_score_2.csv", index_col = 0)
         
         # GC score
         gc_common_scdisinfact = np.max(score.loc[score["methods"] == "scDisInFact", "GC (common)"].values)

@@ -95,7 +95,10 @@ for batch_id, batch_name in enumerate(batch_names):
     adata_batch = adata[batch_ids == batch_id, :]
     counts_array.append(adata_batch.X.toarray())
     meta_cells_array.append(adata_batch.obs)
-    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, diff_labels = [severity_ids[batch_ids == batch_id]], batch_id = batch_ids[batch_ids == batch_id]))
+    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, 
+                                              diff_labels = [severity_ids[batch_ids == batch_id]], 
+                                              batch_id = batch_ids[batch_ids == batch_id]
+                                              ))
 
     print(f"current batch: {batch_id}")
     print(f"number of cells: {len(datasets_array[-1])}")
@@ -316,7 +319,7 @@ utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cohort"].values.squeeze() for 
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 
-# In[] Test imputation accuracy
+# In[] Test prediction accuracy
 
 counts_joint = []
 batch_ids = []

@@ -23,7 +23,7 @@ n_batches = 6
 
 permute = False
 
-data_dir = f"../data/simulated_new/2conditions_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+data_dir = f"../data/simulated/2conditions_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
 if permute:
     result_dir = f"./simulated/generalization/permute_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
