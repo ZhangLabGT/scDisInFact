@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 from umap import UMAP
-import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import numpy as np
 from scipy import sparse
