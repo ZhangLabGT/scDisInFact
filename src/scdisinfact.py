@@ -103,7 +103,8 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
             an array of scdisinfact datasets
         meta_cells_array:
             an array of meta cells (match datasets)
-
+        matching_dict:
+            matching dictionary between condition/batch ID and condition/batch names
     """
     # Sanity check
     print("Sanity check...")
@@ -178,7 +179,8 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
                                                 ))
     print("Finished.")
 
-    return datasets_array, meta_cells_array
+    matching_dict = {"cond_names": cond_names, "batch_name": batch_names, "batch_cond_names": batch_cond_names}
+    return datasets_array, meta_cells_array, matching_dict
 
 class scdisinfact(nn.Module):
     """\
@@ -486,6 +488,8 @@ class scdisinfact(nn.Module):
             recon_loss: choose from "NB", "ZINB", "MSE"
             reg_contr: regulation weight of contrastive loss
         """
+        self.train()
+
         best_loss = 1e3
         trigger = 0
         clamp_comm = 0.01
@@ -701,7 +705,8 @@ class scdisinfact(nn.Module):
                         #         else:
                         #             self.load_state_dict(torch.load(f'../check_points/model.pt'))
                         #             trigger = 0                            
-                        
+
+        self.eval()                
         return loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests
 
 
