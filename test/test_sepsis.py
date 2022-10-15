@@ -95,7 +95,7 @@ for batch_id, batch_name in enumerate(batch_names):
     adata_batch = adata[batch_ids == batch_id, :]
     counts_array.append(adata_batch.X.toarray())
     meta_cells_array.append(adata_batch.obs)
-    datasets_array.append(scdisinfact.dataset(counts = counts_array[-1], anno = None, 
+    datasets_array.append(scdisinfact.scdisinfact_dataset(counts = counts_array[-1], anno = None, 
                                               diff_labels = [severity_ids[batch_ids == batch_id]], 
                                               batch_id = batch_ids[batch_ids == batch_id]
                                               ))
@@ -208,13 +208,9 @@ model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size =
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-# train_joint is more efficient, but does not work as well compared to train
-model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
 
-_ = model.eval()
-
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth")
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth", map_location = device))
 
 # In[] Plot the loss curve
@@ -311,9 +307,10 @@ if not os.path.exists(result_dir + comment):
 
 # utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "separate", axis_label = "UMAP", figsize = (10,140), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 6, s = 5)
 
-utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
-utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cellstates.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = True, text_size = "small")
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cellstates.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
 utils.plot_latent(zs = z_cs_umaps, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umaps, annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cohorts.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_celltypes.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)

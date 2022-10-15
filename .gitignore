@@ -10,4 +10,4 @@ old
 test/_old
 **/*.pth
 **/_*
-scgen-reproducibility
+DATASET_README*

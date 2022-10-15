@@ -314,7 +314,10 @@ with torch.no_grad():
         #
         #-------------------------------------------------------------------------------------------------------------------
         
-        # removed of batch effect
+        # removed of batch effect, 
+        # NOTE: when calculating MSE using the true count, all batches are free of batch effect and condition effect.
+        # Now we remove the condition effect, and align all batches to batch 0, but batches then all have a shift towards
+        # the 1st batch. Need to update the simulator to remove the batch effect of batch 0.
         ref_batch = 0.0
         # still use the original batch_id as input, not change the latent embedding
         z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
@@ -804,8 +807,10 @@ if True:
     # sns.boxplot(data = scores_cell, x = "Method", y = "Pearson", ax = ax[2])
     sns.boxplot(data = scores_cell, x = "Method", y = "R2", ax = ax[2])
     sns.boxplot(data = scores_cell, x = "Method", y = "R2 diff", ax = ax[3])
+    ax[0].set_ylabel("MSE")
+    ax[1].set_ylabel("MSE-diff") 
     ax[2].set_ylabel("$R^2$")
-    ax[3].set_ylabel("$R^2$ diff") 
+    ax[3].set_ylabel("$R^2$-diff") 
     ax[0].set_xlabel(None)
     ax[1].set_xlabel(None)
     ax[2].set_xlabel(None)
@@ -828,8 +833,10 @@ if True:
     # sns.boxplot(data = scores_cluster, x = "Method", y = "Pearson", ax = ax[2])
     sns.boxplot(data = scores_cluster, x = "Method", y = "R2", ax = ax[2])
     sns.boxplot(data = scores_cluster, x = "Method", y = "R2 diff", ax = ax[3])
+    ax[0].set_ylabel("MSE")
+    ax[1].set_ylabel("MSE-diff") 
     ax[2].set_ylabel("$R^2$")
-    ax[3].set_ylabel("$R^2$ diff") 
+    ax[3].set_ylabel("$R^2$-diff") 
     ax[0].set_xlabel(None)
     ax[1].set_xlabel(None)
     ax[2].set_xlabel(None)

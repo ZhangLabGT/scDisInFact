@@ -145,12 +145,15 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
         else:
             counts = np.concatenate(counts, axis = 0)
         meta_cells = pd.concat(meta_cells, axis = 0)
-
+    else:
+        # make sure to be dataframe
+        meta_cells = pd.DataFrame(meta_cells)
+        
     # construct batch_cond pairs that combine batch id with condition types
     if batch_cond_key is None:
-        meta_cells['batch_cond'] = meta_cells[[batch_key] + condition_key].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+        meta_cells["batch_cond"] = meta_cells[[batch_key] + condition_key].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
     else:
-        meta_cells['batch_cond'] = meta_cells[batch_cond_key].values
+        meta_cells["batch_cond"] = meta_cells[batch_cond_key].values
     # transfer label to ids
     cond_ids = []
     cond_names = []

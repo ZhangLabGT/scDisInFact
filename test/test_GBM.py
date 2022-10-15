@@ -60,7 +60,7 @@ genes = np.loadtxt(data_dir + "genes.txt", dtype = np.object)
 meta_cell = pd.read_csv(data_dir + "meta_cells.csv", sep = "\t", index_col = 0)
 meta_cell_seurat = pd.read_csv(data_dir + "meta_cells_seurat.csv", sep = "\t", index_col = 0)
 meta_cell["mstatus"] = meta_cell_seurat["mstatus"].values.squeeze()
-# meta_cell.loc[(meta_cell["mstatus"] != "Myeloid") & ((meta_cell["mstatus"] != "Oligodendrocytes") & (meta_cell["mstatus"] != "tumor")), "mstatus"] = "Other"
+meta_cell.loc[(meta_cell["mstatus"] != "Myeloid") & ((meta_cell["mstatus"] != "Oligodendrocytes") & (meta_cell["mstatus"] != "tumor")), "mstatus"] = "Other"
 counts = sp.load_npz(data_dir + "counts_rna.npz")
 
 # condition
@@ -88,7 +88,7 @@ for sample_id, sample_name in enumerate(sample_names):
     print(torch.unique(datasets_array[-1].mmd_batch_id))
 
 
-datasets_array, meta_cells_array = scdisinfact.create_scdisinfact_dataset(counts, meta_cell, condition_key = ["treatment"], batch_key = "patient_id", batch_cond_key = "sample_id", meta_genes = genes)
+datasets_array, meta_cells_array, matching_dict = scdisinfact.create_scdisinfact_dataset(counts, meta_cell, condition_key = ["treatment"], batch_key = "patient_id", batch_cond_key = "sample_id", meta_genes = genes)
 
 # In[] Visualize the original count matrix
 
@@ -113,7 +113,7 @@ for batch, _ in enumerate(meta_cells_array):
 
 save_file = None
 
-utils.plot_latent(x_umaps, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
+utils.plot_latent(x_umaps, annos = [x["patient_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "patients.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
 utils.plot_latent(x_umaps, annos = [x["treatment"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "treatment.png", figsize = (11,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
@@ -151,11 +151,9 @@ model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size =
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-_ = model.eval()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
 
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth", map_location = device))
 end_time = time.time()
 print("time used: {:.2f}".format(end_time - start_time))
@@ -291,7 +289,10 @@ key_genes1 = key_genes_score[key_genes_score["genes"].isin(["H1FX", "MT1X", "MT2
 sns.stripplot(x="score", data = key_genes1, color="red", edgecolor="gray", size = 6)
 # Myeloid-relevent genes
 key_genes2 = key_genes_score[key_genes_score["genes"].isin(["CD68", "CTSD", "CTSB", "CD163", "CYBB", "CCR5", "CTSZ", "SAMHD1", "PLA2G7", "SIGLEC1", "LILRB3", "CCR1", "APOBR"])]
-sns.stripplot(x="score", data = key_genes2, color="blue", edgecolor="gray", size = 6)
+g = sns.stripplot(x="score", data = key_genes2, color="blue", edgecolor="gray", size = 6)
+# for i in range(len(key_genes2)):
+#     g.text(x=i+0.1, y=key_genes2["score"].values[i]+0.001, s=key_genes2["genes"], horizontalalignment='right', size='medium', color='black')
+
 # key_genes3 = key_genes_score[key_genes_score["genes"].isin(["LEFTY1", "BEX5", "SAXO2", "KCNB1"])]
 # sns.stripplot(x="score", data = key_genes3, color="green", edgecolor="gray", size = 3)
 fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
@@ -368,7 +369,7 @@ for batch_id, dataset in enumerate(datasets_array):
 X_scdisinfact_impute = np.concatenate(X_scdisinfact_impute)
 
 
-# In[] Calculate batch mixing score
+# In[] Visualize the predicted counts
 # normalization
 X_scdisinfact_impute_norm = X_scdisinfact_impute/(np.sum(X_scdisinfact_impute, axis = 1, keepdims = True) + 1e-6) * 100
 X_scdisinfact_impute_norm = np.log1p(X_scdisinfact_impute_norm)
@@ -392,7 +393,7 @@ for batch, _ in enumerate(meta_cells_array):
         end_pointer = start_pointer + meta_cells_array[batch].shape[0]
         x_umaps_scdisinfact.append(x_umap_scdisinfact[start_pointer:end_pointer,:])
 
-utils.plot_latent(x_umaps_scdisinfact, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + comment + "predict_batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
+utils.plot_latent(x_umaps_scdisinfact, annos = [x["patient_id"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + comment + "predict_patient.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
 utils.plot_latent(x_umaps_scdisinfact, annos = [x["treatment"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + comment + "predict_treatment.png", figsize = (11,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
@@ -502,12 +503,12 @@ silhouette_batch_scdisinfact = bmk.silhouette_batch(X = x_pca_scdisinfact, \
 print('Silhouette batch (scDisInFact): {:.3f}'.format(silhouette_batch_scdisinfact))
 
 silhouette_batch_scgen = bmk.silhouette_batch(X = x_pca_scgen, \
-    batch_gt = np.concatenate([x["sample_id"].values.squeeze() for x in meta_cells_array], axis = 0), \
+    batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array], axis = 0), \
         group_gt = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
 print('Silhouette batch (scGEN): {:.3f}'.format(silhouette_batch_scgen))
 
 silhouette_batch_scpregan = bmk.silhouette_batch(X = x_pca_scpregan, \
-    batch_gt = np.concatenate([x["sample_id"].values.squeeze() for x in meta_cells_array], axis = 0), \
+    batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array], axis = 0), \
         group_gt = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
 print('Silhouette batch (scPreGAN): {:.3f}'.format(silhouette_batch_scpregan))
 
@@ -571,6 +572,7 @@ scores["Silhouette (batches)"] = np.array([silhouette_batch_scdisinfact, silhoue
 scores.to_csv(result_dir + comment + "batch_mixing_scdisinfact.csv")
 
 # In[]
+scores = pd.read_csv(result_dir + comment + "batch_mixing_scdisinfact.csv", index_col = 0)
 plt.rcParams["font.size"] = 20
 fig = plt.figure(figsize = (17,5))
 axs = fig.subplots(nrows = 1, ncols = 3)
@@ -584,8 +586,8 @@ show_values(axs[2])
 axs[0].set_ylim(0.5, 1)
 axs[1].set_ylim(0.5, 1)
 axs[2].set_ylim(0, 1)
-axs[0].set_ylabel("ASW (batch)")
-axs[1].set_ylabel("ASW (batch)")
+axs[0].set_ylabel("ASW-batch")
+axs[1].set_ylabel("ASW-batch")
 axs[0].set_title("Batch alignment")
 axs[1].set_title("Condition alignment")
 axs[2].set_title("Cell type separation")

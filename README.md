@@ -35,7 +35,7 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
 The test dataset in the manuscript is available upon request.
 
 ### Installation and usage
-No installation is needed. Please check [demo.iipynb](https://github.com/ZhangLabGT/scDisInFact/blob/main/demo.ipynb) for the usage of scDisInFact.
+No installation is needed. Please check [demo.ipynb](https://github.com/ZhangLabGT/scDisInFact/blob/main/demo.ipynb) for the usage of scDisInFact.
 
 ### Contact
 * Ziqi Zhang: ziqi.zhang@gatech.edu
