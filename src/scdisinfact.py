@@ -18,7 +18,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class scdisinfact_dataset(Dataset):
 
-    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id = None, normalize = True):
+    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id, normalize = True):
         """
         Preprocessing similar to the DCA (dca.io.normalize)
         """
@@ -48,10 +48,8 @@ class scdisinfact_dataset(Dataset):
             assert diff_label.shape[0] == self.counts_stand.shape[0]
             self.diff_labels.append(torch.LongTensor(diff_label))
         self.batch_id = torch.Tensor(batch_id)
-        if mmd_batch_id is None:
-            self.mmd_batch_id = self.batch_id
-        else:
-            self.mmd_batch_id = torch.Tensor(mmd_batch_id)
+        # batch and condition combination
+        self.mmd_batch_id = torch.Tensor(mmd_batch_id)
 
     def __len__(self):
         return self.counts.shape[0]
@@ -141,7 +139,7 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
     # concatenate the count matrices and meta_cells if they are lists
     if type(counts) == list:
         if sp.issparse(counts[0]):
-            counts = sp.vstack(counts)
+            counts = sp.vstack(counts, format = "csr")
         else:
             counts = np.concatenate(counts, axis = 0)
         meta_cells = pd.concat(meta_cells, axis = 0)
@@ -158,12 +156,12 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
     cond_ids = []
     cond_names = []
     for cond in condition_key:
-        cond_id, cond_name = pd.factorize(meta_cells[cond].values.squeeze())
+        cond_id, cond_name = pd.factorize(meta_cells[cond].values.squeeze(), sort = True)
         cond_ids.append(cond_id)
         cond_names.append(cond_name)
     
-    batch_ids, batch_names = pd.factorize(meta_cells[batch_key].values.squeeze())
-    batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze())
+    batch_ids, batch_names = pd.factorize(meta_cells[batch_key].values.squeeze(), sort = True)
+    batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze(), sort = True)
 
     datasets_array = []
     counts_array = []
@@ -446,9 +444,12 @@ class scdisinfact(nn.Module):
             raise ValueError("recon_loss can only be 'ZINB', 'NB', and 'MSE'")        
 
         # 2.kl divergence
-        loss_kl = torch.sum(dict_inf["mu_c"].pow(2).add_(dict_inf["logvar_c"].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_c"])).mul_(-0.5)         
+        # loss_kl = torch.sum(dict_inf["mu_c"].pow(2).add_(dict_inf["logvar_c"].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_c"])).mul_(-0.5)         
+        # average instead of sum across data within a batch
+        loss_kl = torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_c"] - dict_inf["mu_c"] ** 2 - dict_inf["logvar_c"].exp(), dim = 1), dim = 0)
         for diff_factor in range(self.n_diff_factors):
-            loss_kl += torch.sum(dict_inf["mu_d"][diff_factor].pow(2).add_(dict_inf["logvar_d"][diff_factor].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_d"][diff_factor])).mul_(-0.5)
+            # loss_kl += torch.sum(dict_inf["mu_d"][diff_factor].pow(2).add_(dict_inf["logvar_d"][diff_factor].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_d"][diff_factor])).mul_(-0.5)
+            loss_kl += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - dict_inf["mu_d"][diff_factor] ** 2 - dict_inf["logvar_d"][diff_factor].exp(), dim = 1), dim = 0)    
 
         # 3.MMD loss
         # common mmd loss
@@ -458,8 +459,10 @@ class scdisinfact(nn.Module):
         for diff_factor in range(self.n_diff_factors):
             for diff_label in self.uniq_diff_labels[diff_factor]:
                 idx = diff_labels[diff_factor] == diff_label
-                loss_mmd_diff += loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_d"][diff_factor][idx, :], batch_ids = batch_id[idx], device = self.device)
-        
+                if any(idx):
+                    loss_mmd_diff += loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_d"][diff_factor][idx, :], batch_ids = batch_id[idx], device = self.device)
+                else:
+                    loss_mmd_diff += 0
         # 4.classifier loss and contr loss
         loss_class = 0
         loss_contr = 0
@@ -561,7 +564,15 @@ class scdisinfact(nn.Module):
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = loss_recon + self.lambs["mmd_comm"] * loss_mmd_comm + self.lambs["kl"] * loss_kl
+                # print("\nstep1")
+                # print(loss_recon)
+                # print(self.lambs["mmd_comm"] * loss_mmd_comm)
+                # print(self.lambs["kl"] * loss_kl)
+                # print()
+
                 loss.backward()
+                # clip the gradient to prevent exploding
+                nn.utils.clip_grad_norm_(self.parameters(), 1)
                 self.opt.step()
                 self.opt.zero_grad()
 
@@ -590,7 +601,19 @@ class scdisinfact(nn.Module):
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * (loss_class + reg_contr * loss_contr) + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
+                # print("\nstep2")
+                # print(loss_recon)
+                # print(self.lambs["mmd_diff"] * loss_mmd_diff)
+                # print(self.lambs["kl"] * loss_kl)
+                # print(self.lambs["class"] * loss_class)
+                # print(self.lambs["class"] * reg_contr * loss_contr)
+                # print(self.lambs["gl"] * loss_gl_d)
+                # print(self.lambs["tc"] * loss_tc)
+                # print()
+
                 loss.backward()
+                # clip the gradient to prevent exploding
+                nn.utils.clip_grad_norm_(self.parameters(), 1)
                 self.opt.step()
                 self.opt.zero_grad()
 
@@ -619,7 +642,13 @@ class scdisinfact(nn.Module):
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                 loss = self.lambs["tc"] * loss_tc
+                # print("\nstep3")
+                # print(self.lambs["tc"] * loss_tc)
+                # print()
+
                 loss.backward()
+                # clip the gradient to prevent exploding
+                nn.utils.clip_grad_norm_(self.parameters(), 1)
                 self.opt.step()
                 self.opt.zero_grad()    
 
