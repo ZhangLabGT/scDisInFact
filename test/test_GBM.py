@@ -63,29 +63,29 @@ meta_cell["mstatus"] = meta_cell_seurat["mstatus"].values.squeeze()
 meta_cell.loc[(meta_cell["mstatus"] != "Myeloid") & ((meta_cell["mstatus"] != "Oligodendrocytes") & (meta_cell["mstatus"] != "tumor")), "mstatus"] = "Other"
 counts = sp.load_npz(data_dir + "counts_rna.npz")
 
-# condition
-treatment_id, treatments = pd.factorize(meta_cell["treatment"].values.squeeze())
-# batches: 1. consider patient as batch, 2. consider sample as batch
-patient_ids, patient_names = pd.factorize(meta_cell["patient_id"].values.squeeze())
-sample_ids, sample_names = pd.factorize(meta_cell["sample_id"].values.squeeze())
+# # condition
+# treatment_id, treatments = pd.factorize(meta_cell["treatment"].values.squeeze())
+# # batches: 1. consider patient as batch, 2. consider sample as batch
+# patient_ids, patient_names = pd.factorize(meta_cell["patient_id"].values.squeeze())
+# sample_ids, sample_names = pd.factorize(meta_cell["sample_id"].values.squeeze())
 
-datasets_array = []
-counts_array = []
-meta_cells_array = []
-for sample_id, sample_name in enumerate(sample_names):
-    counts_array.append(counts[sample_ids == sample_id, :].toarray())
-    meta_cells_array.append(meta_cell.iloc[sample_ids == sample_id, :])
-    datasets_array.append(scdisinfact.scdisinfact_dataset(counts = counts_array[-1], anno = None, 
-                                              diff_labels = [treatment_id[sample_ids == sample_id]], 
-                                              # use sample_ids instead of patient_ids
-                                              batch_id = patient_ids[sample_ids == sample_id],
-                                              # batch_id = sample_ids[sample_ids == sample_id], 
-                                              mmd_batch_id = sample_ids[sample_ids == sample_id]
-                                              ))
+# datasets_array = []
+# counts_array = []
+# meta_cells_array = []
+# for sample_id, sample_name in enumerate(sample_names):
+#     counts_array.append(counts[sample_ids == sample_id, :].toarray())
+#     meta_cells_array.append(meta_cell.iloc[sample_ids == sample_id, :])
+#     datasets_array.append(scdisinfact.scdisinfact_dataset(counts = counts_array[-1], anno = None, 
+#                                               diff_labels = [treatment_id[sample_ids == sample_id]], 
+#                                               # use sample_ids instead of patient_ids
+#                                               batch_id = patient_ids[sample_ids == sample_id],
+#                                               # batch_id = sample_ids[sample_ids == sample_id], 
+#                                               mmd_batch_id = sample_ids[sample_ids == sample_id]
+#                                               ))
     
-    print(len(datasets_array[-1]))
-    print(torch.unique(datasets_array[-1].batch_id))
-    print(torch.unique(datasets_array[-1].mmd_batch_id))
+#     print(len(datasets_array[-1]))
+#     print(torch.unique(datasets_array[-1].batch_id))
+#     print(torch.unique(datasets_array[-1].mmd_batch_id))
 
 
 datasets_array, meta_cells_array, matching_dict = scdisinfact.create_scdisinfact_dataset(counts, meta_cell, condition_key = ["treatment"], batch_key = "patient_id", batch_cond_key = "sample_id", meta_genes = genes)
@@ -134,26 +134,27 @@ import importlib
 importlib.reload(scdisinfact)
 
 reg_mmd_comm = 1e-4
-reg_mmd_diff = 1e-4
+reg_mmd_diff = 1e-3
 reg_gl = 1
 reg_tc = 0.5
 reg_class = 1
-reg_kl = 1e-6
+reg_kl = 1e-5
+reg_contr = 0.01
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
 Ks = [8, 4]
 nepochs = 200
 interval = 10
 start_time = time.time()
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 8, interval = interval, lr = 5e-4, 
+model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
 
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth", map_location = device))
 end_time = time.time()
 print("time used: {:.2f}".format(end_time - start_time))
@@ -207,48 +208,36 @@ z_ds_umap = []
 z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
-z_ds_umaps = [[], []]
-z_cs_umaps = []
-zs_umaps = []
-for batch, _ in enumerate(datasets_array):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + zs[batch].shape[0]
-        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
-        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
-        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
-
-    elif batch == (len(datasets_array) - 1):
-        start_pointer = start_pointer + zs[batch - 1].shape[0]
-        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:,:])
-        z_cs_umaps.append(z_cs_umap[start_pointer:,:])
-        zs_umaps.append(zs_umap[start_pointer:,:])
-
-    else:
-        start_pointer = start_pointer + zs[batch - 1].shape[0]
-        end_pointer = start_pointer + zs[batch].shape[0]
-        z_ds_umaps[0].append(z_ds_umap[0][start_pointer:end_pointer,:])
-        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
-        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
-
 comment = f'plots_{Ks}_{lambs}/'
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
 
-utils.plot_latent(zs = z_cs_umaps, annos = [x["patient_id"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umaps, annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_sample_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umaps, annos = [x["treatment"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umaps, annos = [x["location"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_location.png".format()) if result_dir else None, markerscale = 9, s = 3, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umaps, annos = [x["gender"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_gender.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umaps, annos = [x["mstatus"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]),\
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["sample_id"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_sample_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["treatment"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["location"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_location.png".format()) if result_dir else None, markerscale = 9, s = 3, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["gender"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_gender.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["patient_id"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["sample_id"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_sample_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["treatment"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["location"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_location.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["gender"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_gender.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umaps[0], annos = [x["mstatus"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["sample_id"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_sample_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["treatment"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["location"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_location.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["gender"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_gender.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["mstatus"].values.squeeze() for x in meta_cells_array]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in meta_cells_array]), \
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 
 # In[] 
@@ -305,60 +294,9 @@ fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# z_cs = []
-# z_ds = []
-# zs = []
-# treatment_labels = []
-# X_scdisinfact_impute = []
-# with torch.no_grad():
-#     for batch_id, dataset in enumerate(datasets_array):
-#         treatment_labels.append(treatments[dataset.diff_labels[0].numpy()])
-#         # pass through the encoders
-#         dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-#         # pass through the decoder
-#         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-#         z_c = dict_inf["mu_c"]
-#         z_d = dict_inf["mu_d"]
-#         z = torch.cat([z_c] + z_d, dim = 1)
-#         mu = dict_gen["mu"]
-#         z_cs.append(z_c.cpu().detach().numpy())
-#         zs.append(z.cpu().detach().numpy())
-#         z_ds.append([x.cpu().detach().numpy() for x in z_d])   
-
-# treatment_labels = np.concatenate(treatment_labels, axis = 0)
-# z_ds = np.concatenate([x[0] for x in z_ds], axis = 0)
-
-# mean_ctrl = np.mean(z_ds[treatment_labels == "vehicle (DMSO)"], axis = 0)[None,:]
-# mean_stim = np.mean(z_ds[treatment_labels == "0.2 uM panobinostat"], axis = 0)[None,:]
-# delta_stim_ctrl = mean_ctrl - mean_stim
-# delta_ctrl_ctrl = mean_ctrl - mean_ctrl
-
-# with torch.no_grad():
-#     # removed of batch effect
-#     ref_batch = 0.0
-#     for batch_id, dataset in enumerate(datasets_array):
-#         # still use the original batch_id as input, not change the latent embedding
-#         z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-#         z_d = []
-#         for Enc_d in model.Enc_ds:
-#             # still use the original batch_id as input, not change the latent embedding
-#             _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-#             # control: 0, stimulation: 1
-#             _z_d[dataset.diff_labels[0] == 0] = _z_d[dataset.diff_labels[0] == 0] + torch.from_numpy(delta_ctrl_ctrl).to(model.device)
-#             _z_d[dataset.diff_labels[0] == 1] = _z_d[dataset.diff_labels[0] == 1] + torch.from_numpy(delta_stim_ctrl).to(model.device)
-#             z_d.append(_z_d)        
-
-#         # change the batch_id into ref batch as input
-#         z = torch.concat([z_c] + z_d + [torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None]], axis = 1)        
-
-#         # NOTE: change the batch_id into ref batch as input, change the diff condition into control
-#         mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
-#         X_scdisinfact_impute.append(mu_impute.cpu().detach().numpy())
-
-# X_scdisinfact_impute = np.concatenate(X_scdisinfact_impute)
-
 # checked, produce the same result as above
-pred_conds = [np.where(treatments == "vehicle (DMSO)")[0][0]]
+# TODO: check it, and update the code
+pred_conds = [np.where(matching_dict["cond_names"][0] == "vehicle (DMSO)")[0][0]]
 # pred_conds = 0
 X_scdisinfact_impute = []
 
@@ -477,9 +415,9 @@ utils.plot_latent(x_umaps_scpregan, annos = [x["mstatus"].values.squeeze() for x
 
 # In[]
 
-x_pca_scgen = PCA(n_components = 10).fit_transform(X_scgen_impute_norm) 
-x_pca_scdisinfact = PCA(n_components = 10).fit_transform(X_scdisinfact_impute_norm)
-x_pca_scpregan = PCA(n_components = 10).fit_transform(X_scpregan_impute_norm) 
+x_pca_scgen = PCA(n_components = 5).fit_transform(X_scgen_impute_norm) 
+x_pca_scdisinfact = PCA(n_components = 5).fit_transform(X_scdisinfact_impute_norm)
+x_pca_scpregan = PCA(n_components = 5).fit_transform(X_scpregan_impute_norm) 
 
 n_neighbors = 100
 # graph connectivity score, check the batch mixing of the imputated gene expression data

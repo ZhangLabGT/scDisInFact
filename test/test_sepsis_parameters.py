@@ -70,7 +70,7 @@ if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 # read in the dataset
 counts_array = []
-meta_cells_array = []
+meta_cell_array = []
 for batch_id in range(1, 36):
     # not batches correspond to id 25 and 30
     if batch_id not in [25, 30]:
@@ -81,13 +81,13 @@ for batch_id in range(1, 36):
         
         # Cell_Type stores the major cell type, Cell_State stores the detailed cell type, 
         # Cohort stores the condition of disease, and biosample_id stores the tissue type, Patient for the patient ID
-        meta_cells_array.append(meta_cell)
+        meta_cell_array.append(meta_cell)
         counts = sparse.load_npz(data_dir + f"counts_Batch_{batch_id}.npz")
         counts_array.append(counts.toarray())
 
 counts = np.concatenate(counts_array, axis = 0)
 adata = AnnData(X = counts)
-adata.obs = pd.concat(meta_cells_array, axis = 0)
+adata.obs = pd.concat(meta_cell_array, axis = 0)
 adata.var.index = genes
 
 adata_primary = adata[(adata.obs["Cohort"] == "Leuk-UTI")|(adata.obs["Cohort"] == "Int-URO")|(adata.obs["Cohort"] == "URO"), :]
@@ -107,16 +107,27 @@ adata_icu_sep = adata[adata.obs["Cohort"] == "ICU-SEP", :]
 # 2. Another way is to use Leuk-UTI, Int-URO, and URO (control? with no UTI)
 adata = adata_secondary
 
-# # processing batches
-# batch_ids, batch_names = pd.factorize(adata.obs["Batches"].values.squeeze())
-# # patients
-# # batch_ids, batch_names = pd.factorize(adata.obs["donor_id"].values.squeeze())
-# severity_ids, severity_names = pd.factorize(adata.obs["Cohort"].values.squeeze())
+# processing batches
+batch_ids, batch_names = pd.factorize(adata.obs["Batches"].values.squeeze())
+# patients
+# batch_ids, batch_names = pd.factorize(adata.obs["donor_id"].values.squeeze())
+severity_ids, severity_names = pd.factorize(adata.obs["Cohort"].values.squeeze())
 
-counts = adata.X
-meta_cell = adata.obs
-genes = adata.var.index.values.squeeze()
-datasets_array, meta_cells_array, matching_dict = scdisinfact.create_scdisinfact_dataset(counts, meta_cell, condition_key = ["Cohort"], batch_key = "Batches", batch_cond_key = None, meta_genes = genes)
+counts_array = []
+meta_cells_array = []
+datasets_array = []
+for batch_id, batch_name in enumerate(batch_names):
+    adata_batch = adata[batch_ids == batch_id, :]
+    counts_array.append(adata_batch.X.toarray())
+    meta_cells_array.append(adata_batch.obs)
+    datasets_array.append(scdisinfact.scdisinfact_dataset(counts = counts_array[-1], anno = None, 
+                                              diff_labels = [severity_ids[batch_ids == batch_id]], 
+                                              batch_id = batch_ids[batch_ids == batch_id]
+                                              ))
+
+    print(f"current batch: {batch_id}")
+    print(f"number of cells: {len(datasets_array[-1])}")
+    print(f"unique conditions: {np.unique(severity_ids[batch_ids == batch_id])}")
 
 # # In[] Check the batch effect: 1. among batches; 2. among patients
 # from sklearn.decomposition import PCA
@@ -162,17 +173,17 @@ umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state 
 x_umap = umap_op.fit_transform(np.concatenate([x.counts_norm for x in datasets_array], axis = 0))
 # separate into batches
 x_umaps = []
-for batch, _ in enumerate(datasets_array):
+for batch, _ in enumerate(counts_array):
     if batch == 0:
         start_pointer = 0
-        end_pointer = start_pointer + len(datasets_array[batch])
+        end_pointer = start_pointer + counts_array[batch].shape[0]
         x_umaps.append(x_umap[start_pointer:end_pointer,:])
-    elif batch == (len(datasets_array) - 1):
-        start_pointer = start_pointer + len(datasets_array[batch - 1])
+    elif batch == (len(counts_array) - 1):
+        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
         x_umaps.append(x_umap[start_pointer:,:])
     else:
-        start_pointer = start_pointer + len(datasets_array[batch - 1])
-        end_pointer = start_pointer + len(datasets_array[batch])
+        start_pointer = start_pointer + counts_array[batch - 1].shape[0]
+        end_pointer = start_pointer + counts_array[batch].shape[0]
         x_umaps.append(x_umap[start_pointer:end_pointer,:])
 
 save_file = None
@@ -194,30 +205,18 @@ utils.plot_latent(x_umaps, annos = [x["Cell_State"].values.squeeze() for x in me
 # Train scDisInFact
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-import importlib 
-importlib.reload(scdisinfact)
-# reference setting
-reg_mmd_comm = 1e-5
-reg_mmd_diff = 1e-5
-reg_gl = 1
-reg_tc = 0.5
-reg_class = 1
-reg_kl = 1e-6
+
+# argument
+reg_mmd_comm = eval(sys.argv[1])
+reg_mmd_diff = eval(sys.argv[2])
+reg_gl = eval(sys.argv[3])
+reg_tc = eval(sys.argv[4])
+reg_class = eval(sys.argv[5])
+reg_kl = eval(sys.argv[6])
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
 Ks = [8, 4]
-
-# argument
-# reg_mmd_comm = eval(sys.argv[1])
-# reg_mmd_diff = eval(sys.argv[2])
-# reg_gl = eval(sys.argv[3])
-# reg_tc = eval(sys.argv[4])
-# reg_class = eval(sys.argv[5])
-# reg_kl = eval(sys.argv[6])
-# # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-# lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
-# Ks = [8, 4]
-batch_size = 8
+batch_size = 64
 
 nepochs = 1000
 interval = 10
@@ -231,43 +230,6 @@ losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.0
 
 torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth", map_location = device))
-
-# # In[] Plot the loss curve
-# plt.rcParams["font.size"] = 20
-# loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
-# iters = np.arange(1, len(loss_tests)+1)
-
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_tests, "-*", label = 'Total loss')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_gl_d_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_recon_tests, "-*", label = 'reconstruction')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_recon_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_class_tests, "-*", label = 'classifier')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_class_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 # In[] Plot results
 z_cs = []
@@ -334,43 +296,6 @@ utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cell_Type"].values.squeeze() f
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims_condition.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 utils.plot_latent(zs = z_ds_umaps[0], annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-# In[] 
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-#
-# Key gene detection
-#
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# model_params = torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}.pth")
-# # last 21 dimensions are batch ids
-# inf = np.array(model_params["Enc_ds.0.fc.fc_layers.Layer 0.0.weight"].detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.))[:genes.shape[0]]
-# sorted_genes = genes[np.argsort(inf)[::-1]]
-# key_genes_score = pd.DataFrame(columns = ["genes", "score"])
-# key_genes_score["genes"] = sorted_genes
-# key_genes_score["score"] = inf[np.argsort(inf)[::-1]]
-# key_genes_score.to_csv(result_dir + "key_genes.csv")
-# key_genes_score.iloc[0:1000,0:1].to_csv(result_dir + "key_gene_list.txt", index = False, header = False)
-
-plt.rcParams["font.size"] = 20
-key_genes_score = pd.read_csv(result_dir + "key_genes.csv", index_col = 0)
-
-fig, ax = plt.subplots(figsize=(10, 5))
-# Show each distribution with both violins and points
-sns.violinplot(x="score",data= key_genes_score, palette="Set3", inner="points")
-sns.despine(left=True)
-fig.suptitle('Scores of genes', fontsize=18, fontweight='bold')
-ax.set_xlabel("scores",size = 16,alpha=0.7)
-
-
-fig, ax = plt.subplots(figsize=(10, 5))
-sns.violinplot(x="score",data = key_genes_score, palette="Set3")
-# sns.despine(left=True)
-# sns.stripplot(x="score", data = key_genes_score, color="gray", edgecolor="gray", size = 2, alpha = 0.7)
-# genes that differentially expressed in MS1 cells from ICU-SEP versus ICU-NoSEP: PLAC8, CLU, CD52, TMEM176B, TMEM176A
-key_genes1 = key_genes_score[key_genes_score["genes"].isin(["PLAC8", "CLU", "CD52", "TMEM176B", "TMEM176A"])]
-sns.stripplot(x="score", data = key_genes1, color="red", edgecolor="gray", size = 6)
-fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
-
 
 # In[] 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -378,7 +303,7 @@ fig.savefig(result_dir + "marker_gene_violin.png", bbox_inches = "tight")
 # Test prediction accuracy
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-pred_conds = [np.where(matching_dict["cond_names"][0] == "ICU-NoSEP")[0][0]]
+pred_conds = [np.where(severity_names == "ICU-NoSEP")[0][0]]
 X_scdisinfact_impute = []
 ref_batch = 0
 z_ds_preds = []
@@ -416,64 +341,9 @@ utils.plot_latent(zs = x_umaps_scdisinfact, annos = [x["Cell_State"].values.sque
 utils.plot_latent(zs = x_umaps_scdisinfact, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"predict_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 utils.plot_latent(zs = x_umaps_scdisinfact, annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"predict_cohort.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-
 # In[]
-# normalization for scGEN
-# TODO: meta_cell doesn't match counts_scgen, they follow adata_secondary
-X_scgen_impute = sparse.load_npz(result_dir + "scGEN/counts_scgen.npz").toarray()
-X_scgen_impute = (X_scgen_impute >= 0) * X_scgen_impute
-X_scgen_impute_norm = X_scgen_impute/(np.sum(X_scgen_impute, axis = 1, keepdims = True) + 1e-6) * 100
-X_scgen_impute_norm = np.log1p(X_scgen_impute_norm)
-x_pca_scgen = PCA(n_components = 10).fit_transform(X_scgen_impute_norm) 
 
-# plot umap
-umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state = 0) 
-x_umap_scgen = umap_op.fit_transform(x_pca_scgen)
-x_umap_scgen = pd.DataFrame(x_umap_scgen, index = adata_secondary.obs.index)
-# separate into batches
-x_umaps_scgen = []
-for batch, meta_cell in enumerate(meta_cells_array):
-    x_umaps_scgen.append(x_umap_scgen.loc[meta_cell.index, :].values)
-    
-utils.plot_latent(x_umaps_scgen, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scGEN/predict_batches.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scgen, annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scGEN/predict_cohort.png", figsize = (12,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scgen, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scGEN/predict_celltype.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scgen, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scGEN/predict_cellstate.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-
-# In[]
-# normalization for scPreGAN
-X_scpregan_impute = sparse.load_npz(result_dir + "scPreGAN/counts_scpregan.npz").toarray()
-X_scpregan_impute = (X_scpregan_impute >= 0) * X_scpregan_impute
-X_scpregan_impute_norm = X_scpregan_impute/(np.sum(X_scpregan_impute, axis = 1, keepdims = True) + 1e-6) * 100
-X_scpregan_impute_norm = np.log1p(X_scpregan_impute_norm)
-X_scpregan_impute_norm = X_scpregan_impute
-x_pca_scpregan = PCA(n_components = 10).fit_transform(X_scpregan_impute_norm) 
-
-# plot umap
-umap_op = UMAP(n_components = 2, n_neighbors = 100, min_dist = 0.4, random_state = 0) 
-x_umap_scpregan = umap_op.fit_transform(x_pca_scpregan)
-x_umap_scpregan = pd.DataFrame(x_umap_scpregan, index = adata_secondary.obs.index)
-
-# separate into batches
-x_umaps_scpregan = []
-for batch, meta_cell in enumerate(meta_cells_array):
-    x_umaps_scpregan.append(x_umap_scpregan.loc[meta_cell.index, :].values)
-
-utils.plot_latent(x_umaps_scpregan, annos = [x["Batches"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scPreGAN/predict_batches.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scpregan, annos = [x["Cohort"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scPreGAN/predict_cohort.png", figsize = (12,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scpregan, annos = [x["Cell_Type"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scPreGAN/predict_celltype.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umaps_scpregan, annos = [x["Cell_State"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "scPreGAN/predict_cellstate.png", figsize = (17,10), axis_label = "UMAP", markerscale = 6)
-
-# In[]
 x_pca_scdisinfact = PCA(n_components = 10).fit_transform(X_scdisinfact_impute_norm)
-
-x_pca_scgen = PCA(n_components = 10).fit_transform(X_scgen_impute_norm) 
-x_pca_scgen = pd.DataFrame(x_pca_scgen, index = adata_secondary.obs.index)
-x_pca_scgen = x_pca_scgen.loc[pd.concat(meta_cells_array, axis = 0).index, :].values
-
-x_pca_scpregan = PCA(n_components = 10).fit_transform(X_scpregan_impute_norm) 
-x_pca_scpregan = pd.DataFrame(x_pca_scpregan, index = adata_secondary.obs.index)
-x_pca_scpregan = x_pca_scpregan.loc[pd.concat(meta_cells_array, axis = 0).index, :].values
 
 n_neighbors = 100
 # graph connectivity score, check the batch mixing of the imputated gene expression data
@@ -481,46 +351,17 @@ gc_scdisinfact = bmk.graph_connectivity(X = x_pca_scdisinfact, \
     groups = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), k = n_neighbors)
 print('GC (scDisInFact): {:.3f}'.format(gc_scdisinfact))
 
-gc_scgen = bmk.graph_connectivity(X = x_pca_scgen, \
-    groups = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), k = n_neighbors)
-print('GC (scGEN): {:.3f}'.format(gc_scgen))
-
-gc_scpregan = bmk.graph_connectivity(X = x_pca_scpregan, \
-    groups = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), k = n_neighbors)
-print('GC (scPreGAN): {:.3f}'.format(gc_scpregan))
-
-
 # silhouette (batch)
 silhouette_batch_scdisinfact = bmk.silhouette_batch(X = x_pca_scdisinfact, \
     batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
         group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
 print('Silhouette batch (scDisInFact): {:.3f}'.format(silhouette_batch_scdisinfact))
 
-silhouette_batch_scgen = bmk.silhouette_batch(X = x_pca_scgen, \
-    batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
-        group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
-print('Silhouette batch (scGEN): {:.3f}'.format(silhouette_batch_scgen))
-
-silhouette_batch_scpregan = bmk.silhouette_batch(X = x_pca_scpregan, \
-    batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
-        group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
-print('Silhouette batch (scPreGAN): {:.3f}'.format(silhouette_batch_scpregan))
-
 # silhouette (condition)
 silhouette_condition_scdisinfact = bmk.silhouette_batch(X = x_pca_scdisinfact, \
     batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
         group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
 print('Silhouette condition (scDisInFact): {:.3f}'.format(silhouette_condition_scdisinfact))
-
-silhouette_condition_scgen = bmk.silhouette_batch(X = x_pca_scgen, \
-    batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
-        group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
-print('Silhouette condition (scGEN): {:.3f}'.format(silhouette_condition_scgen))
-
-silhouette_condition_scpregan = bmk.silhouette_batch(X = x_pca_scpregan, \
-    batch_gt = np.concatenate([x["Batches"].values.squeeze() for x in meta_cells_array], axis = 0), \
-        group_gt = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), verbose = False)
-print('Silhouette condition (scPreGAN): {:.3f}'.format(silhouette_condition_scpregan))
 
 
 # ARI score, check the separation of cell types? still needed?
@@ -538,57 +379,5 @@ for resolution in np.arange(0.1, 10, 0.5):
     nmi_scdisinfact.append(bmk.nmi(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scdisinfact))
     ari_scdisinfact.append(bmk.ari(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scdisinfact))
 
-    leiden_labels_scgen = utils.leiden_cluster(X = x_pca_scgen, knn_indices = None, knn_dists = None, resolution = resolution)
-    nmi_scgen.append(bmk.nmi(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scgen))
-    ari_scgen.append(bmk.ari(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scgen))
-
-    leiden_labels_scpregan = utils.leiden_cluster(X = x_pca_scpregan, knn_indices = None, knn_dists = None, resolution = resolution)
-    nmi_scpregan.append(bmk.nmi(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scpregan))
-    ari_scpregan.append(bmk.ari(group1 = np.concatenate([x["Cell_Type"].values.squeeze() for x in meta_cells_array], axis = 0), group2 = leiden_labels_scpregan))
-
 print('NMI (scDisInFact): {:.3f}'.format(max(nmi_scdisinfact)))
 print('ARI (scDisInFact): {:.3f}'.format(max(ari_scdisinfact)))
-
-print('NMI (scGEN): {:.3f}'.format(max(nmi_scgen)))
-print('ARI (scGEN): {:.3f}'.format(max(ari_scgen)))
-
-print('NMI (scPreGAN): {:.3f}'.format(max(nmi_scpregan)))
-print('ARI (scPreGAN): {:.3f}'.format(max(ari_scpregan)))
-
-# scores
-scores = pd.DataFrame(columns = ["GC", "NMI", "ARI", "Silhouette (condition)", "Silhouette (batches)", "methods"])
-scores["NMI"] = np.array([np.max(nmi_scdisinfact), np.max(nmi_scgen), np.max(nmi_scpregan)])
-scores["ARI"] = np.array([np.max(ari_scdisinfact), np.max(ari_scgen), np.max(nmi_scpregan)])
-scores["methods"] = np.array(["scDisInFact", "scGEN", "scPreGAN"])
-scores["GC"] = np.array([gc_scdisinfact, gc_scgen, gc_scpregan])
-scores["Silhouette (condition)"] = np.array([silhouette_condition_scdisinfact, silhouette_condition_scgen, silhouette_condition_scpregan])
-scores["Silhouette (batches)"] = np.array([silhouette_batch_scdisinfact, silhouette_batch_scgen, silhouette_batch_scpregan])
-scores.to_csv(result_dir + comment + "batch_mixing_scdisinfact.csv")
-
-# In[]
-scores = pd.read_csv(result_dir + comment + "batch_mixing_scdisinfact.csv", index_col = 0)
-plt.rcParams["font.size"] = 20
-fig = plt.figure(figsize = (17,5))
-axs = fig.subplots(nrows = 1, ncols = 3)
-sns.barplot(data = scores, x = "methods", y = "Silhouette (batches)", ax = axs[0], color = "blue")
-show_values(axs[0], )
-sns.barplot(data = scores, x = "methods", y = "Silhouette (condition)", ax = axs[1], color = "blue")
-show_values(axs[1])
-sns.barplot(data = scores, x = "methods", y = "ARI", ax = axs[2], color = "blue")
-show_values(axs[2])
-
-axs[0].set_ylim(0.5, 1)
-axs[1].set_ylim(0.5, 1)
-axs[2].set_ylim(0, 1)
-axs[0].set_ylabel("ASW-batch")
-axs[1].set_ylabel("ASW-batch")
-axs[0].set_title("Batch alignment")
-axs[1].set_title("Condition alignment")
-axs[2].set_title("Cell type separation")
-
-plt.tight_layout()
-fig.savefig(result_dir + comment + "prediction_score.png", bbox_inches = "tight")
-
-
-
-# %%

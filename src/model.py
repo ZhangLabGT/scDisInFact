@@ -264,6 +264,9 @@ class Encoder(nn.Module):
 
         self.mean_layer = nn.Linear(n_hidden, n_output)
         self.var_layer = nn.Linear(n_hidden, n_output)
+        # initialize var layer with 0 to avoid exploding kl divergence
+        self.var_layer.weight.data.fill_(0)
+        self.var_layer.bias.data.fill_(0)
 
     def forward(self, x: torch.Tensor, *cat_list: int):
         r"""

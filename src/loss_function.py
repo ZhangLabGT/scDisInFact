@@ -6,6 +6,11 @@ from torch.autograd import Variable
 from zinb import *
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+#--------------------------------------------------------------------------
+#
+# Maximum mean discrepency
+#
+#--------------------------------------------------------------------------
 def compute_pairwise_distances(x, y):
     x_norm = (x**2).sum(1).view(-1, 1)
     y_t = torch.transpose(y, 0, 1)
@@ -24,27 +29,6 @@ def _gaussian_kernel_matrix(x, y, device):
     return result
 
 
-
-def _maximum_mean_discrepancy(xs, ref_batch = 0, device = device): #Function to calculate MMD value
-    nbatches = len(xs)
-    # assuming batch 0 is the reference batch
-    cost = 0
-    # within batch
-    for batch in range(nbatches):
-        if batch == ref_batch:
-            cost += (nbatches - 1) * torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch], device))
-        else:
-            cost += torch.mean(_gaussian_kernel_matrix(xs[batch], xs[batch], device))
-    
-    # between batches
-    for batch in range(1, nbatches):
-        cost -= 2.0 * torch.mean(_gaussian_kernel_matrix(xs[ref_batch], xs[batch], device))
-    
-    cost = torch.sqrt(cost ** 2 + 1e-9)
-    if cost.data.item()<0:
-        cost = torch.tensor([0.0], device = device)
-
-    return cost
 
 def maximum_mean_discrepancy(xs, batch_ids, device, ref_batch = None): #Function to calculate MMD value
     # number of cells
@@ -77,7 +61,11 @@ def maximum_mean_discrepancy(xs, batch_ids, device, ref_batch = None): #Function
 
     return cost
 
-
+#--------------------------------------------------------------------------
+#
+# Calculate contrastive loss
+#
+#--------------------------------------------------------------------------
 def _nan2inf(x):
     return torch.where(torch.isnan(x), torch.zeros_like(x)+np.inf, x)
 
@@ -173,14 +161,6 @@ class CircleLoss(nn.Module):
         loss = self.soft_plus(torch.logsumexp(logit_n, dim=0) + torch.logsumexp(logit_p, dim=0))
 
         return loss
-class MMD_LOSS(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, y_pred, y_true):
-        loss_MSE = nn.MSELoss().forward(y_pred, y_true)
-        loss_MMD = maximum_mean_discrepancy(y_pred, y_true)
-        return (loss_MMD + loss_MSE)
 
 
 class SupConLoss(nn.Module):
@@ -380,6 +360,11 @@ class SNNLoss(nn.Module):
 
         return loss
 
+#--------------------------------------------------------------------------
+#
+# Group LASSO loss
+#
+#--------------------------------------------------------------------------
 def grouplasso(W, alpha = 1e-4):
     '''
     Definition:
@@ -399,6 +384,11 @@ def grouplasso(W, alpha = 1e-4):
     loss_gl = torch.mean((l2_norm >= alpha) * l2_norm + (l2_norm < alpha) * (W.pow(2).sum(dim=0).add(1e-8)/(2*alpha + 1e-8) + alpha/2))
     return loss_gl
 
+#--------------------------------------------------------------------------
+#
+# Calculate marginal distribution
+#
+#--------------------------------------------------------------------------
 def estimate_entropies(qz_samples, mus, logvars, device):
     """Computes the term:
         E_{p(x)} E_{q(z|x)} [-log q(z)]
@@ -487,6 +477,9 @@ def _log_gaussian(sample, mu, logvar, device):
     return loglkl
 
 def log_gaussian(sample, mu, logvar, device):
+    """
+    calculate the log likelihood of Gaussian distribution
+    """
     mu = mu.type_as(sample)
     logvar = logvar.type_as(sample)
     c = Variable(torch.Tensor([np.log(2 * np.pi)])).type_as(sample.data)

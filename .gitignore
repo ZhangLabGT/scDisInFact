@@ -11,3 +11,4 @@ test/_old
 **/*.pth
 **/_*
 DATASET_README*
+test/_*
