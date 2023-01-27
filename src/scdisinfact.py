@@ -18,34 +18,19 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class scdisinfact_dataset(Dataset):
 
-    def __init__(self, counts, anno, diff_labels, batch_id, mmd_batch_id, normalize = True):
+    def __init__(self, counts, counts_norm, size_factor, diff_labels, batch_id, mmd_batch_id):
         """
         Preprocessing similar to the DCA (dca.io.normalize)
         """
         assert not len(counts) == 0, "Count is empty"
         self.counts = torch.FloatTensor(counts)
-        # normalize the count
-        if normalize:
-            self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
-            # in scanpy, np.median(counts) is used instead of 100 here
-            self.counts_norm = counts/self.libsizes * 100
-            self.counts_norm = np.log1p(self.counts_norm)
-        else:
-            self.libsizes = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))
-            self.counts_norm = counts/self.libsizes * 100
-        # further standardize the count
-        self.counts_stand = torch.FloatTensor(StandardScaler().fit_transform(self.counts_norm))
-        if anno is not None:
-            self.anno = torch.Tensor(anno)
-        else:
-            self.anno = None
-        self.libsizes = torch.FloatTensor(self.libsizes)
-        self.size_factor = self.libsizes / 100
+        self.counts_norm = torch.FloatTensor(counts_norm)
+        self.size_factor = torch.FloatTensor(size_factor)
         # make sure the input time point are integer
         self.diff_labels = []
         # loop through all types of diff labels
         for diff_label in diff_labels:
-            assert diff_label.shape[0] == self.counts_stand.shape[0]
+            assert diff_label.shape[0] == self.counts_norm.shape[0]
             self.diff_labels.append(torch.LongTensor(diff_label))
         self.batch_id = torch.Tensor(batch_id)
         # batch and condition combination
@@ -56,14 +41,18 @@ class scdisinfact_dataset(Dataset):
     
     def __getitem__(self, idx):
         # data original data, index the index of cell, label, corresponding labels, batch, corresponding batch number
-        if self.anno is not None:
-            sample = {"mmd_batch_id": self.mmd_batch_id[idx], "batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels], "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "anno": self.anno[idx], "size_factor": self.size_factor[idx]}
-        else:
-            sample = {"mmd_batch_id": self.mmd_batch_id[idx], "batch_id": self.batch_id[idx], "diff_labels": [x[idx] for x in self.diff_labels],  "count": self.counts[idx,:], "count_stand": self.counts_stand[idx,:], "index": idx, "size_factor": self.size_factor[idx]}
+        sample = {"mmd_batch_id": self.mmd_batch_id[idx], 
+                  "batch_id": self.batch_id[idx], 
+                  "diff_labels": [x[idx] for x in self.diff_labels],  
+                  "counts": self.counts[idx,:], 
+                  "counts_norm": self.counts_norm[idx,:], 
+                  "index": idx, 
+                  "size_factor": self.size_factor[idx]}
         return sample
 
 
-def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, batch_key, batch_cond_key = None):
+
+def create_scdisinfact_dataset(counts, meta_cells, condition_key, batch_key, batch_cond_key = None, log_trans = True):
     """\
     Description:
     --------------
@@ -80,9 +69,6 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
             Inpute dataframe/list of dataframe that includes the meta-information of each cell in count matrices. 
             The cell should match that of ``counts''
         
-        meta_data
-            Inpute dataframe of dataframe that includes the meta-information of each gene in counts.
-            
         condition_key:
             List of column labels in the ``meta_cells'' that corresponds to condition groups in different condition types.
 
@@ -95,6 +81,8 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
             Batch-condition pair is automatically calculated from the batch and condition labels when ``batch_cond_key'' is None.
             ``batch_cond_key'' is None by default.
 
+        log_trans:
+            Whether log transform the count matrix or not
     Return:
     --------------
         datasets_array: 
@@ -114,8 +102,6 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
         for i in range(len(counts)):
             # check the number of cells in each count matrix match that of each meta_cells
             assert counts[i].shape[0] == meta_cells[i].shape[0]
-            # check the number of genes in each count matrix match that of meta_genes
-            assert counts[i].shape[1] == meta_genes.shape[0]
             # check the condition_key is in the columns of meta_cells
             for cond in condition_key:
                 assert cond in meta_cells[i].columns
@@ -124,8 +110,6 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
     else:
         # should include the same number of cells
         assert counts.shape[0] == meta_cells.shape[0]
-        # should include the same set of genes
-        assert counts.shape[1] == meta_genes.shape[0]
         for cond in condition_key:
             assert cond in meta_cells.columns
         # check the batch_key is in the columns of meta_cells
@@ -138,10 +122,13 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
     print("Create scDisInFact datasets...")
     # concatenate the count matrices and meta_cells if they are lists
     if type(counts) == list:
-        if sp.issparse(counts[0]):
-            counts = sp.vstack(counts, format = "csr")
-        else:
-            counts = np.concatenate(counts, axis = 0)
+        try:
+            if sp.issparse(counts[0]):
+                counts = sp.vstack(counts, format = "csr")
+            else:
+                counts = np.concatenate(counts, axis = 0)
+        except:
+            raise ValueError("Genes are not match among count matrices.")
         meta_cells = pd.concat(meta_cells, axis = 0)
     else:
         # make sure to be dataframe
@@ -157,31 +144,47 @@ def create_scdisinfact_dataset(counts, meta_cells, meta_genes, condition_key, ba
     cond_names = []
     for cond in condition_key:
         cond_id, cond_name = pd.factorize(meta_cells[cond].values.squeeze(), sort = True)
+        meta_cells[cond + "_id"] = cond_id
         cond_ids.append(cond_id)
         cond_names.append(cond_name)
     
     batch_ids, batch_names = pd.factorize(meta_cells[batch_key].values.squeeze(), sort = True)
+    meta_cells[batch_key + "_id"] = batch_ids
     batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze(), sort = True)
+    meta_cells["batch_cond_id"] = batch_cond_ids
+
+    counts = counts.toarray()
+    # normalize the count matrix
+    size_factor = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))/100
+    # in scanpy, np.median(counts) is used instead of 100 here
+    counts_norm = counts/size_factor
+    if log_trans:
+        counts_norm = np.log1p(counts_norm)
+    # further standardize the count
+    scaler = StandardScaler().fit(counts_norm)
+    counts_norm = torch.FloatTensor(scaler.transform(counts_norm))
 
     datasets_array = []
     counts_array = []
+    counts_norm_array = []
+    size_factor_array = []
     meta_cells_array = []
     for batch_cond_id, batch_cond_name in enumerate(batch_cond_names):
-        if sp.issparse(counts):
-            counts_array.append(counts[batch_cond_ids == batch_cond_id, :].toarray())
-        else:
-            counts_array.append(counts[batch_cond_ids == batch_cond_id, :])
+        counts_array.append(counts[batch_cond_ids == batch_cond_id, :])
+        counts_norm_array.append(counts_norm[batch_cond_ids == batch_cond_id, :])
+        size_factor_array.append(size_factor[batch_cond_ids == batch_cond_id, :])
 
         meta_cells_array.append(meta_cells.iloc[batch_cond_ids == batch_cond_id, :])
-        datasets_array.append(scdisinfact_dataset(counts = counts_array[-1], anno = None, 
-                                                  diff_labels = [x[batch_cond_ids == batch_cond_id] for x in cond_ids], 
-                                                  batch_id = batch_ids[batch_cond_ids == batch_cond_id],
-                                                  mmd_batch_id = batch_cond_ids[batch_cond_ids == batch_cond_id]
+        datasets_array.append(scdisinfact_dataset(counts = counts_array[-1], counts_norm = counts_norm_array[-1],
+                                                size_factor = size_factor_array[-1],
+                                                diff_labels = [x[batch_cond_ids == batch_cond_id] for x in cond_ids], 
+                                                batch_id = batch_ids[batch_cond_ids == batch_cond_id],
+                                                mmd_batch_id = batch_cond_ids[batch_cond_ids == batch_cond_id]
                                                 ))
     print("Finished.")
 
     matching_dict = {"cond_names": cond_names, "batch_name": batch_names, "batch_cond_names": batch_cond_names}
-    return datasets_array, meta_cells_array, matching_dict
+    return {"datasets": datasets_array, "meta_cells": meta_cells_array, "matching_dict": matching_dict, "scaler": scaler}
 
 class scdisinfact(nn.Module):
     """\
@@ -191,8 +194,8 @@ class scdisinfact(nn.Module):
     
     Parameters:
     --------------
-        datasets:
-            list of input scdisinfact dataset
+        data_dict:
+            dictionary returned by create_scdisinfact_dataset
         reg_mmd_comm:
             regularization weight of MMD loss on shared-bio factor, default value is 1e-4
         reg_mmd_diff:
@@ -220,12 +223,13 @@ class scdisinfact(nn.Module):
     
     Examples:
     --------------
-    >>> model = scdisinfact.scdisinfact(datasets = datasets_array, Ks = [8,4], batch_size = 8, interval = 10, lr = 5e-4, 
+    >>> model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = [8,4], batch_size = 8, interval = 10, lr = 5e-4, 
                                 reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_tc = 0.5, 
                                 reg_kl = 1e-6, reg_class = 1, seed = 0, device = torch.device("cuda:0"))
     >>> model.train_model(nepochs = 100, recon_loss = "NB", reg_contr = 0.01)
     """
-    def __init__(self, datasets, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, reg_tc = 0.5, reg_kl = 1e-6, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, device = device):
+    def __init__(self, data_dict, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, 
+                 reg_tc = 0.5, reg_kl = 1e-6, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, device = device):
         super().__init__()
         # initialize the parameters
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
@@ -244,7 +248,7 @@ class scdisinfact(nn.Module):
         # device 
         self.device = device
         # dataset
-        self.datasets = datasets
+        self.data_dict = data_dict
 
         if seed is not None:
             np.random.seed(seed)
@@ -261,7 +265,7 @@ class scdisinfact(nn.Module):
         self.uniq_batch_ids = []
 
         # loop through all data matrices/datasets
-        for idx, dataset in enumerate(self.datasets):
+        for idx, dataset in enumerate(self.data_dict["datasets"]):
             assert self.n_diff_factors == len(dataset.diff_labels)
             # make sure that the genes are matched
             if idx == 0:
@@ -313,21 +317,10 @@ class scdisinfact(nn.Module):
         self.Dec = model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.0).to(self.device)
         # Discriminator for factor vae
         self.disc = model.FCLayers(n_in=self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_out=2, n_cat_list=None, n_layers=3, n_hidden=2, dropout_rate=0.0).to(self.device)
-
-        # # parameter when training the common biological factor
-        # self.param_common = nn.ModuleDict({"encoder_common": self.Enc_c, "decoder": self.Dec})
-        # # parameter when training the time factor
-        # self.param_diff = nn.ModuleDict({"encoder_diff": nn.ModuleList(self.Enc_ds), "classifier": nn.ModuleList(self.classifiers)})
-
-        # self.param_disc = nn.ModuleDict({"disc": self.disc})
-        # # declare optimizer for time factor and common biological factor separately
-        # self.opt = opt.Adam(
-        #     [{'params': self.param_common.parameters()}, 
-        #     {'params': self.param_diff.parameters()},
-        #     {'params': self.param_disc.parameters()}], lr = self.lr
-        # )
         
         self.opt = opt.Adam(self.parameters(), lr = self.lr)
+
+
 
     def reparametrize(self, mu, logvar, clamp = 0):
         # exp(0.5*log_var) = exp(log(\sqrt{var})) = \sqrt{var}
@@ -372,7 +365,8 @@ class scdisinfact(nn.Module):
             return {"mu_c":mu_c, "logvar_c": logvar_c, "z_c": z_c, "mu_d": mu_d, "logvar_d": logvar_d, "z_d": z_d}
 
         else:
-            return {"mu_c":mu_c, "logvar_c": logvar_c, "mu_d": mu_d, "logvar_d": logvar_d}
+            # when evaluate the model, z_c=mu_c, z_d=mu_d
+            return {"mu_c":mu_c, "logvar_c": logvar_c, "z_c": mu_c, "mu_d": mu_d, "logvar_d": logvar_d, "z_d": mu_d}
             
 
     def generative(self, z_c, z_d, batch_ids):
@@ -515,7 +509,7 @@ class scdisinfact(nn.Module):
         for epoch in range(nepochs + 1):
             for data_batch in zip(*self.train_loaders):
                 # loop through the data batches correspond to diffferent data matrices
-                count_stand = []
+                counts_norm = []
                 batch_id = []
                 mmd_batch_id = []
                 size_factor = []
@@ -524,15 +518,15 @@ class scdisinfact(nn.Module):
 
                 # load count data
                 for x in data_batch:
-                    count_stand.append(x["count_stand"])
+                    counts_norm.append(x["counts_norm"])
                     batch_id.append(x["batch_id"][:, None])
                     mmd_batch_id.append(x["mmd_batch_id"])
                     size_factor.append(x["size_factor"])
-                    count.append(x["count"])       
+                    count.append(x["counts"])       
                     for diff_factor in range(self.n_diff_factors):
                         diff_labels[diff_factor].append(x["diff_labels"][diff_factor])
 
-                count_stand = torch.cat(count_stand, dim = 0).to(self.device, non_blocking=True)
+                counts_norm = torch.cat(counts_norm, dim = 0).to(self.device, non_blocking=True)
                 batch_id = torch.cat(batch_id, dim = 0).to(self.device, non_blocking=True)
                 mmd_batch_id = torch.cat(mmd_batch_id, dim = 0).to(self.device, non_blocking=True)
                 size_factor = torch.cat(size_factor, dim = 0).to(self.device, non_blocking=True)
@@ -556,7 +550,7 @@ class scdisinfact(nn.Module):
                     x.requires_grad = True
 
                 # pass through the encoders
-                dict_inf = self.inference(counts = count_stand, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
+                dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
                 # pass through the decoder
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
@@ -593,7 +587,7 @@ class scdisinfact(nn.Module):
                     x.requires_grad = True
 
                 # pass through the encoders
-                dict_inf = self.inference(counts = count_stand, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
+                dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
                 # pass through the decoder
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
@@ -634,7 +628,7 @@ class scdisinfact(nn.Module):
                     x.requires_grad = False
 
                 # pass through the encoders
-                dict_inf = self.inference(counts = count_stand, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
+                dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
                 # pass through the decoder
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
@@ -658,7 +652,7 @@ class scdisinfact(nn.Module):
                     # use the whole dataset for validation
                     for data_batch in zip(*self.test_loaders):
                         # loop through the data batches correspond to diffferent data matrices
-                        count_stand = []
+                        counts_norm = []
                         batch_id = []
                         mmd_batch_id = []
                         size_factor = []
@@ -667,15 +661,15 @@ class scdisinfact(nn.Module):
 
                         # load count data
                         for x in data_batch:
-                            count_stand.append(x["count_stand"])
+                            counts_norm.append(x["counts_norm"])
                             batch_id.append(x["batch_id"][:, None])
                             mmd_batch_id.append(x["mmd_batch_id"])
                             size_factor.append(x["size_factor"])
-                            count.append(x["count"])          
+                            count.append(x["counts"])          
                             for diff_factor in range(self.n_diff_factors):
                                 diff_labels[diff_factor].append(x["diff_labels"][diff_factor])
                         
-                        count_stand = torch.cat(count_stand, dim = 0).to(self.device, non_blocking=True)
+                        counts_norm = torch.cat(counts_norm, dim = 0).to(self.device, non_blocking=True)
                         batch_id = torch.cat(batch_id, dim = 0).to(self.device, non_blocking=True)
                         mmd_batch_id = torch.cat(mmd_batch_id, dim = 0).to(self.device, non_blocking=True)
                         size_factor = torch.cat(size_factor, dim = 0).to(self.device, non_blocking=True)
@@ -684,7 +678,7 @@ class scdisinfact(nn.Module):
                             diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0).to(self.device, non_blocking=True)
 
                         # pass through the encoders
-                        dict_inf = self.inference(counts = count_stand, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
+                        dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
                         # pass through the decoder
                         dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
@@ -742,7 +736,7 @@ class scdisinfact(nn.Module):
         return loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests
 
 
-    def predict_counts(self, predict_dataset, predict_conds, predict_batch = None):
+    def predict_counts(self, input_counts, meta_cells, condition_keys, batch_key, predict_conds = None, predict_batch = None):
         """\
         Description:
         -------------
@@ -750,13 +744,23 @@ class scdisinfact(nn.Module):
 
         Parameters:
         -------------
-            predict_dataset:
-                the dataset for condition effect prediction
+            input_counts:
+                the input count matrix, of the shape (ncells, ngenes), of the type np.array()
+
+            meta_cells:
+                the meta cell data frame of input count matrix
             
+            condition_keys:
+                the list of columns of the meta_cell data frame that correspond to the conditions
+            
+            batch_key:
+                the column of the meta_cell data frame that correspond to the batches
+
             predict_conds:
                 the condition label of the predicted dataset, 
                 predict_conds should have length equal to the number of condition type, 
-                and should have one condition group id for each condition type
+                and should have one condition group id for each condition type,
+                default None, where the condition is kept the same as predict_dataset
 
             predict_batch:
                 the batch id of the predicted dataset, default None, where batch_ids is kept the same as predict_dataset
@@ -767,17 +771,40 @@ class scdisinfact(nn.Module):
         
         """
         # number of condition types should match
-        assert len(self.uniq_diff_labels) == len(predict_conds)        
-        # extract the condition type of predict_dataset
-        curr_conds = predict_dataset.diff_labels
+        # assert len(self.uniq_diff_labels) == len(predict_conds)        
+        # assert len(self.uniq_diff_labels) == len(condition_keys)
+        # process the current condition labels
+        curr_conds = []
+        for idx, condition_key in enumerate(condition_keys):
+            curr_cond = np.zeros(meta_cells.shape[0])
+            for condition_id, condition in enumerate(self.data_dict["matching_dict"]["cond_names"][idx]):
+                curr_cond[meta_cells[condition_key].values.squeeze() == condition] = condition_id
+            curr_conds.append(curr_cond)
+        
+        # process the predict condition label
+        if predict_conds is not None:
+            for idx, condition in enumerate(predict_conds):
+                predict_conds[idx] = np.array([np.where(self.data_dict["matching_dict"]["cond_names"][idx] == predict_conds[idx])[0][0]] * curr_conds[idx].shape[0])
 
+        # process the batch labels
+        curr_batch = torch.zeros(meta_cells.shape[0])
+        for batch_id, batch in enumerate(self.data_dict["matching_dict"]["batch_name"]):
+            curr_batch[meta_cells[batch_key].values.squeeze() == batch] = batch_id
+        
+        # process the input count matrix
+        size_factor = np.tile(np.sum(input_counts, axis = 1, keepdims = True), (1, input_counts.shape[1]))/100
+        counts_norm = np.log1p(input_counts/size_factor)
+        # further standardize the count
+        counts_norm = torch.FloatTensor(self.data_dict["scaler"].transform(counts_norm))
+
+        # pass through training data to obtain delta
         with torch.no_grad():
             diff_labels = [[] for x in range(self.n_diff_factors)]
             z_ds_train = [[] for x in range(self.n_diff_factors)]
 
-            for dataset in self.datasets:
+            for dataset in self.data_dict["datasets"]:
                 # infer latent factor on train dataset
-                dict_inf_train = self.inference(counts = dataset.counts_stand.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True, eval_model = True)
+                dict_inf_train = self.inference(counts = dataset.counts_norm.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True, eval_model = True)
                 # extract unshared-bio factors
                 z_d = dict_inf_train["mu_d"]                
                 for diff_factor, diff_label in enumerate(dataset.diff_labels):
@@ -786,38 +813,39 @@ class scdisinfact(nn.Module):
                     # append unshared-bio factor
                     z_ds_train[diff_factor].append(z_d[diff_factor])
 
-            # infer latent factor on predict dataset
-            dic_inf_pred = self.inference(counts = predict_dataset.counts_stand.to(self.device), batch_ids = predict_dataset.batch_id[:, None].to(self.device), print_stat = True, eval_model = True)
+            # pass through predicting data for prediction
+            dic_inf_pred = self.inference(counts = counts_norm.to(self.device), batch_ids = curr_batch[:, None].to(self.device), print_stat = True, eval_model = True)
             z_ds_pred = dic_inf_pred["mu_d"]
             
             diff_labels = [np.array(x) for x in diff_labels]
             z_ds_train = [torch.concat(x, dim = 0) for x in z_ds_train]   
 
             # store the centroid z_ds for each condition groups
-            mean_zds = []
-            for diff_factor in range(self.n_diff_factors):
+            if predict_conds is not None:
+                mean_zds = []
+                for diff_factor in range(self.n_diff_factors):
 
-                # calculate the centroid of condition groups under diff_factor
-                mean_zds.append(torch.concat([torch.mean(z_ds_train[diff_factor][diff_labels[diff_factor] == x], dim = 0, keepdim = True) for x in self.uniq_diff_labels[diff_factor]], dim = 0))
-                # predicted centroid, of the shape (ncells, ndims)
-                pred_mean = mean_zds[diff_factor][[predict_conds[diff_factor]] * curr_conds[diff_factor].shape[0]]
-                # current centroid, of the shape (ncells, ndims)
-                curr_mean = mean_zds[diff_factor][curr_conds[diff_factor]]
-                # differences
-                delta = pred_mean - curr_mean
-                # latent space arithmetics
-                z_ds_pred[diff_factor] = z_ds_pred[diff_factor] + delta
+                    # calculate the centroid of condition groups under diff_factor
+                    mean_zds.append(torch.concat([torch.mean(z_ds_train[diff_factor][diff_labels[diff_factor] == x], dim = 0, keepdim = True) for x in self.uniq_diff_labels[diff_factor]], dim = 0))
+                    # predicted centroid, of the shape (ncells, ndims)
+                    pred_mean = mean_zds[diff_factor][predict_conds[diff_factor]]
+                    # current centroid, of the shape (ncells, ndims)
+                    curr_mean = mean_zds[diff_factor][curr_conds[diff_factor]]
+                    # differences
+                    delta = pred_mean - curr_mean
+                    # latent space arithmetics
+                    z_ds_pred[diff_factor] = z_ds_pred[diff_factor] + delta
 
             # generate data from the latent factors
             if predict_batch is None:   
                 # predict_batch is kept the same         
-                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_dataset.batch_id[:,None].to(self.device))
+                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = curr_batch[:,None].to(self.device))
             else:
                 # predict_batch is given
-                batch_id = torch.tensor([[predict_batch] for x in range(predict_dataset.batch_id.shape[0])], device = self.device)
-                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = batch_id)
+                predict_batch = torch.tensor([[np.where(self.data_dict["matching_dict"]["batch_name"] == predict_batch)[0][0]] for x in range(curr_batch.shape[0])], device = self.device)
+                dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_batch)
 
-        return dict_gen["mu"]
+        return dict_gen["mu"].detach().cpu().numpy()
  
 
     def extract_gene_scores(self):

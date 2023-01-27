@@ -18,6 +18,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from sklearn.metrics import r2_score 
 
+# NOTE: standardization has issue between train and test
 
 # In[]
 # sigma = 0.2
@@ -65,53 +66,6 @@ for batch_id in range(n_batches):
     label_stims1.append(np.array(["stim1"] * counts_stims1[-1].shape[0]))
     label_stims2.append(np.array(["stim2"] * counts_stims2[-1].shape[0]))
 
-# training test split
-counts_ctrls_train = []
-counts_ctrls_test = []
-counts_stims1_train = []
-counts_stims1_test = []
-counts_stims2_train = []
-counts_stims2_test = []
-counts_gt_train = []
-counts_gt_test = []
-
-annos_train = []
-annos_test = []
-batches_train = []
-batches_test = []
-label_ctrls_train = []
-label_ctrls_test = []
-label_stims1_train = []
-label_stims1_test = []
-label_stims2_train = []
-label_stims2_test = []
-
-np.random.seed(0)
-for batch_id in range(n_batches):
-    batchsize = counts_ctrls[batch_id].shape[0]
-    train_idx = np.array([False] * batchsize)
-    train_idx[np.random.choice(batchsize, int(0.9 * batchsize), replace = False)] = True
-
-    counts_ctrls_train.append(counts_ctrls[batch_id][train_idx, :])
-    counts_ctrls_test.append(counts_ctrls[batch_id][~train_idx, :])
-    counts_stims1_train.append(counts_stims1[batch_id][train_idx, :])
-    counts_stims1_test.append(counts_stims1[batch_id][~train_idx, :])
-    counts_stims2_train.append(counts_stims2[batch_id][train_idx, :])
-    counts_stims2_test.append(counts_stims2[batch_id][~train_idx, :])
-    counts_gt_train.append(counts_gt[batch_id][train_idx, :])
-    counts_gt_test.append(counts_gt[batch_id][~train_idx, :])
-        
-    annos_train.append(annos[batch_id][train_idx])
-    annos_test.append(annos[batch_id][~train_idx])
-    batches_train.append(batches[batch_id][train_idx])
-    batches_test.append(batches[batch_id][~train_idx])
-    label_ctrls_train.append(label_ctrls[batch_id][train_idx])
-    label_stims1_train.append(label_stims1[batch_id][train_idx])
-    label_stims2_train.append(label_stims2[batch_id][train_idx])
-    label_ctrls_test.append(label_ctrls[batch_id][~train_idx])
-    label_stims1_test.append(label_stims1[batch_id][~train_idx])
-    label_stims2_test.append(label_stims2[batch_id][~train_idx])
-
 # In[]
 # Train with ctrl in batches 1, 2, 4, stim1 in batches 1, 3, 5, stim2 in batches 2, 3, 6
 counts = []
@@ -120,122 +74,131 @@ label_batches = []
 label_annos = []
 np.random.seed(0)
 # BATCH 1: randomly allocate 50% of cells of batch 1 into ctrl, and the remaining into stim 1.
-idx = np.array([False] * len(label_ctrls_train[0]))
-idx[np.random.choice(len(label_ctrls_train[0]), size = int(0.5 * len(label_ctrls_train[0])), replace = False)] = True
-label_batches.append(batches_train[0][idx])
-label_conditions.append(label_ctrls_train[0][idx])
-label_annos.append(annos_train[0][idx])
-counts.append(counts_ctrls_train[0][idx])
+idx = np.array([False] * len(label_ctrls[0]))
+idx[np.random.choice(len(label_ctrls[0]), size = int(0.5 * len(label_ctrls[0])), replace = False)] = True
+label_batches.append(batches[0][idx])
+label_conditions.append(label_ctrls[0][idx])
+label_annos.append(annos[0][idx])
+counts.append(counts_ctrls[0][idx])
 
-label_batches.append(batches_train[0][~idx])
-label_conditions.append(label_stims1_train[0][~idx])
-label_annos.append(annos_train[0][~idx])
-counts.append(counts_stims1_train[0][~idx])
+label_batches.append(batches[0][~idx])
+label_conditions.append(label_stims1[0][~idx])
+label_annos.append(annos[0][~idx])
+counts.append(counts_stims1[0][~idx])
 
 # BATCH 2: randomly allocate 50% of cells of batch 2 into ctrl, and the remaining into stim 2.
-idx = np.array([False] * len(label_ctrls_train[1]))
-idx[np.random.choice(len(label_ctrls_train[1]), size = int(0.5 * len(label_ctrls_train[1])), replace = False)] = True
-label_batches.append(batches_train[1][idx])
-label_conditions.append(label_ctrls_train[1][idx])
-label_annos.append(annos_train[1][idx])
-counts.append(counts_ctrls_train[1][idx])
+idx = np.array([False] * len(label_ctrls[1]))
+idx[np.random.choice(len(label_ctrls[1]), size = int(0.5 * len(label_ctrls[1])), replace = False)] = True
+label_batches.append(batches[1][idx])
+label_conditions.append(label_ctrls[1][idx])
+label_annos.append(annos[1][idx])
+counts.append(counts_ctrls[1][idx])
 
-label_batches.append(batches_train[1][~idx])
-label_conditions.append(label_stims2_train[1][~idx])
-label_annos.append(annos_train[1][~idx])
-counts.append(counts_stims2_train[1][~idx])
+label_batches.append(batches[1][~idx])
+label_conditions.append(label_stims2[1][~idx])
+label_annos.append(annos[1][~idx])
+counts.append(counts_stims2[1][~idx])
 
 # BATCH 3: randomly allocate 50% of cells of batch 3 into stim 1, and the remaining into stim 2.
-idx = np.array([False] * len(label_stims1_train[2]))
-idx[np.random.choice(len(label_stims1_train[2]), size = int(0.5 * len(label_stims1_train[2])), replace = False)] = True
-label_batches.append(batches_train[2][idx])
-label_conditions.append(label_stims1_train[2][idx])
-label_annos.append(annos_train[2][idx])
-counts.append(counts_stims1_train[2][idx])
+idx = np.array([False] * len(label_stims1[2]))
+idx[np.random.choice(len(label_stims1[2]), size = int(0.5 * len(label_stims1[2])), replace = False)] = True
+label_batches.append(batches[2][idx])
+label_conditions.append(label_stims1[2][idx])
+label_annos.append(annos[2][idx])
+counts.append(counts_stims1[2][idx])
 
-label_batches.append(batches_train[2][~idx])
-label_conditions.append(label_stims2_train[2][~idx])
-label_annos.append(annos_train[2][~idx])
-counts.append(counts_stims2_train[2][~idx])
+label_batches.append(batches[2][~idx])
+label_conditions.append(label_stims2[2][~idx])
+label_annos.append(annos[2][~idx])
+counts.append(counts_stims2[2][~idx])
 
 # BATCH 4: 1 condition (ctrl)
-# label_conditions.append(label_ctrls_train[3])
-# label_batches.append(batches_train[3])
-# label_annos.append(annos_train[3])
-# counts.append(counts_ctrls_train[3])
+# label_conditions.append(label_ctrls[3])
+# label_batches.append(batches[3])
+# label_annos.append(annos[3])
+# counts.append(counts_ctrls[3])
 
 # 2 conditions (ctrl and stim2)
-idx = np.array([False] * len(label_ctrls_train[3]))
-idx[np.random.choice(len(label_ctrls_train[3]), size = int(0.5 * len(label_ctrls_train[3])), replace = False)] = True
-label_batches.append(batches_train[3][idx])
-label_conditions.append(label_ctrls_train[3][idx])
-label_annos.append(annos_train[3][idx])
-counts.append(counts_ctrls_train[3][idx])
+idx = np.array([False] * len(label_ctrls[3]))
+idx[np.random.choice(len(label_ctrls[3]), size = int(0.5 * len(label_ctrls[3])), replace = False)] = True
+label_batches.append(batches[3][idx])
+label_conditions.append(label_ctrls[3][idx])
+label_annos.append(annos[3][idx])
+counts.append(counts_ctrls[3][idx])
 
-label_batches.append(batches_train[3][~idx])
-label_conditions.append(label_stims2_train[3][~idx])
-label_annos.append(annos_train[3][~idx])
-counts.append(counts_stims2_train[3][~idx])
+label_batches.append(batches[3][~idx])
+label_conditions.append(label_stims2[3][~idx])
+label_annos.append(annos[3][~idx])
+counts.append(counts_stims2[3][~idx])
 
 # BATCH 5: 1 condition (stim1)
-# label_conditions.append(label_stims1_train[4])
-# label_batches.append(batches_train[4])
-# label_annos.append(annos_train[4])
-# counts.append(counts_stims1_train[4])
+# label_conditions.append(label_stims1[4])
+# label_batches.append(batches[4])
+# label_annos.append(annos[4])
+# counts.append(counts_stims1[4])
 
 # 2 conditions (stim1 and stim2)
-idx = np.array([False] * len(label_stims1_train[4]))
-idx[np.random.choice(len(label_stims1_train[4]), size = int(0.5 * len(label_stims1_train[4])), replace = False)] = True
-label_batches.append(batches_train[4][idx])
-label_conditions.append(label_stims1_train[4][idx])
-label_annos.append(annos_train[4][idx])
-counts.append(counts_stims1_train[4][idx])
+idx = np.array([False] * len(label_stims1[4]))
+idx[np.random.choice(len(label_stims1[4]), size = int(0.5 * len(label_stims1[4])), replace = False)] = True
+label_batches.append(batches[4][idx])
+label_conditions.append(label_stims1[4][idx])
+label_annos.append(annos[4][idx])
+counts.append(counts_stims1[4][idx])
 
-label_batches.append(batches_train[4][~idx])
-label_conditions.append(label_stims2_train[4][~idx])
-label_annos.append(annos_train[4][~idx])
-counts.append(counts_stims2_train[4][~idx])
+label_batches.append(batches[4][~idx])
+label_conditions.append(label_stims2[4][~idx])
+label_annos.append(annos[4][~idx])
+counts.append(counts_stims2[4][~idx])
 
 
 # BATCH 6: 1 condition (stim2)
-# label_conditions.append(label_stims2_train[5])
-# label_batches.append(batches_train[5])
-# label_annos.append(annos_train[5])
-# counts.append(counts_stims1_train[5])
+# label_conditions.append(label_stims2[5])
+# label_batches.append(batches[5])
+# label_annos.append(annos[5])
+# counts.append(counts_stims1[5])
 
 # 2 conditions (ctrl and stim1)
-idx = np.array([False] * len(label_ctrls_train[5]))
-idx[np.random.choice(len(label_ctrls_train[5]), size = int(0.5 * len(label_ctrls_train[5])), replace = False)] = True
-label_batches.append(batches_train[5][idx])
-label_conditions.append(label_ctrls_train[5][idx])
-label_annos.append(annos_train[5][idx])
-counts.append(counts_ctrls_train[5][idx])
+idx = np.array([False] * len(label_ctrls[5]))
+idx[np.random.choice(len(label_ctrls[5]), size = int(0.5 * len(label_ctrls[5])), replace = False)] = True
+label_batches.append(batches[5][idx])
+label_conditions.append(label_ctrls[5][idx])
+label_annos.append(annos[5][idx])
+counts.append(counts_ctrls[5][idx])
 
-label_batches.append(batches_train[5][~idx])
-label_conditions.append(label_stims1_train[5][~idx])
-label_annos.append(annos_train[5][~idx])
-counts.append(counts_stims1_train[5][~idx])
+label_batches.append(batches[5][~idx])
+label_conditions.append(label_stims1[5][~idx])
+label_annos.append(annos[5][~idx])
+counts.append(counts_stims1[5][~idx])
 
-# create training dataset
-counts_train = np.concatenate(counts, axis = 0)
-meta_cells_train = pd.DataFrame(columns = ["condition", "batch", "anno"])
-meta_cells_train["condition"] = np.concatenate(label_conditions, axis = 0)
-meta_cells_train["batch"] = np.concatenate(label_batches, axis = 0)
-meta_cells_train["anno"] = np.concatenate(label_annos, axis = 0)
+counts = np.concatenate(counts, axis = 0)
+meta_cells = pd.DataFrame(columns = ["condition", "batch", "anno"])
+meta_cells["condition"] = np.concatenate(label_conditions, axis = 0)
+meta_cells["batch"] = np.concatenate(label_batches, axis = 0)
+meta_cells["anno"] = np.concatenate(label_annos, axis = 0)
 meta_genes = pd.DataFrame(columns = ["genes"])
-meta_genes["genes"] = np.array(["gene_" + str(x) for x in range(counts_train.shape[1])])
+meta_genes["genes"] = np.array(["gene_" + str(x) for x in range(counts.shape[1])])
 
-datasets_array_train, meta_cells_array_train, matching_dict_train = scdisinfact.create_scdisinfact_dataset(counts = counts_train, meta_cells = meta_cells_train, meta_genes = meta_genes, condition_key = ["condition"], batch_key = "batch")
+datasets_array, meta_cells_array, matching_dict = scdisinfact.create_scdisinfact_dataset(counts = counts, meta_cells = meta_cells, meta_genes = meta_genes, condition_key = ["condition"], batch_key = "batch")
 
-# create testing dataset
-counts_test = np.concatenate(counts_ctrls_test + counts_stims1_test + counts_stims2_test, axis = 0)
-counts_gt_test = np.concatenate(counts_gt_test + counts_gt_test + counts_gt_test, axis = 0)
-meta_cells_test = pd.DataFrame(columns = ["condition", "batch", "anno"])
-meta_cells_test["condition"] = np.concatenate(label_ctrls_test + label_stims1_test + label_stims2_test, axis = 0)
-meta_cells_test["batch"] = np.concatenate(batches_test + batches_test + batches_test, axis = 0)
-meta_cells_test["anno"] = np.concatenate(annos_test + annos_test + annos_test, axis = 0)
-datasets_array_test, meta_cells_array_test, matching_dict_test = scdisinfact.create_scdisinfact_dataset(counts = counts_test, meta_cells = meta_cells_test, meta_genes = meta_genes, condition_key = ["condition"], batch_key = "batch")
-datasets_array_test_gt, meta_cells_array_test_gt, matching_dict_test_gt = scdisinfact.create_scdisinfact_dataset(counts = counts_gt_test, meta_cells = meta_cells_test, meta_genes = meta_genes, condition_key = ["condition"], batch_key = "batch")
+# ----------------------------------------------
+#
+# train-test split, in-sample 
+#
+# ----------------------------------------------
+np.random.seed(0)
+datasets_array_train = []
+datasets_array_test = []
+meta_cells_array_train = []
+meta_cells_array_test = []
+for dataset, meta_cells in zip(datasets_array, meta_cells_array):
+    permute_idx = np.random.permutation(np.arange(len(dataset)))
+    train_idx = permute_idx[:int(0.9 * len(dataset))]
+    test_idx = permute_idx[int(0.9 * len(dataset)):]
+
+    datasets_array_train.append(dataset[train_idx])
+    datasets_array_test.append(dataset[test_idx])
+    meta_cells_array_train.append(meta_cells.iloc[train_idx,:])
+    meta_cells_array_test.append(meta_cells.iloc[test_idx,:])
 
 
 # In[] training the model
@@ -299,9 +262,9 @@ zs_train = []
 with torch.no_grad():
     for batch_id, dataset in enumerate(datasets_array_train):
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset["count_stand"].to(model.device), batch_ids = dataset["batch_id"][:,None].to(model.device), print_stat = True, eval_model = True)
         # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset["batch_id"][:,None].to(model.device))
         z_c = dict_inf["mu_c"]
         z_d = dict_inf["mu_d"]
         z = torch.cat([z_c] + z_d, dim = 1)
@@ -351,23 +314,19 @@ zs_test = []
 with torch.no_grad():
     for batch_id, dataset in enumerate(datasets_array_test):
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-        dict_inf["z_d"] = dict_inf["mu_d"]
-        dict_inf["z_c"] = dict_inf["mu_c"]
+        dict_inf = model.inference(counts = dataset["count_stand"].to(model.device), batch_ids = dataset["batch_id"][:,None].to(model.device), print_stat = True, eval_model = True)
         # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-        
-        z_c = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset["batch_id"][:,None].to(model.device))
+
+        z = torch.cat([dict_inf["mu_c"]] + dict_inf["mu_d"], dim = 1)
         mu = dict_gen["mu"]
-        z_cs_test.append(z_c.cpu().detach().numpy())
+        z_cs_test.append(dict_inf["mu_c"].cpu().detach().numpy())
         zs_test.append(z.cpu().detach().numpy())
-        z_ds_test.append([x.cpu().detach().numpy() for x in z_d])   
+        z_ds_test.append([x.cpu().detach().numpy() for x in dict_inf["mu_d"]])   
 
         # calculate loss, the mmd_batch_id of test is not the same as train, but doesn't affect the result (only affect the mmd loss)
-        losses = model.loss(dict_inf = dict_inf, dict_gen = dict_gen, size_factor = dataset.size_factor.to(model.device), \
-            count = dataset.counts.to(model.device), batch_id = dataset.mmd_batch_id.to(model.device), diff_labels = [x.to(model.device) for x in dataset.diff_labels], recon_loss = "NB")
+        losses = model.loss(dict_inf = dict_inf, dict_gen = dict_gen, size_factor = dataset["size_factor"].to(model.device), \
+            count = dataset["counts"].to(model.device), batch_id = dataset["mmd_batch_id"].to(model.device), diff_labels = [x.to(model.device) for x in dataset["diff_labels"]], recon_loss = "NB")
         LOSS_RECON += losses[0].item()
         LOSS_KL += losses[1].item()
         LOSS_MMD_COMM += losses[2].item()
@@ -504,7 +463,7 @@ scores_scdisinfact["LOSS_TC"] = np.array([LOSS_TC])
 scores_scdisinfact["methods"] = np.array(["scDisInFact"])
 
 # In[] Check prediction accuracy
-pred_conds = [np.where(matching_dict_train["cond_names"][0] == "ctrl")[0][0]]
+pred_conds = [np.where(matching_dict["cond_names"][0] == "ctrl")[0][0]]
 X_scdisinfact_impute = []
 
 # make sure that the pred_conds 
