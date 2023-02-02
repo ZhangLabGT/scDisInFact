@@ -301,12 +301,12 @@ class scdisinfact(nn.Module):
 
         # create model
         # encoder for common biological factor
-        self.Enc_c = model.Encoder(n_input = self.ngenes, n_output = self.Ks["common_factor"], n_layers = 2, n_hidden = 128, n_cat_list = [len(self.uniq_batch_ids)], dropout_rate  = 0.0).to(self.device)
+        self.Enc_c = model.Encoder(n_input = self.ngenes, n_output = self.Ks["common_factor"], n_layers = 2, n_hidden = 128, n_cat_list = [len(self.uniq_batch_ids)], dropout_rate  = 0.2, use_batch_norm = False).to(self.device)
         # encoder for time factor, + 1 here refers to the one batch ID
         self.Enc_ds = nn.ModuleList([])
         for diff_factor in range(self.n_diff_factors):
             self.Enc_ds.append(
-                model.Encoder(n_input = self.ngenes, n_output = self.Ks["diff_factors"][diff_factor], n_layers = 1, n_hidden = 128, n_cat_list = [len(self.uniq_batch_ids)], dropout_rate = 0.0).to(self.device)
+                model.Encoder(n_input = self.ngenes, n_output = self.Ks["diff_factors"][diff_factor], n_layers = 1, n_hidden = 128, n_cat_list = [len(self.uniq_batch_ids)], dropout_rate = 0.2, use_batch_norm = False).to(self.device)
             )
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
         # use a linear classifier as stated in the paper
@@ -314,9 +314,9 @@ class scdisinfact(nn.Module):
         for diff_factor in range(self.n_diff_factors):
             self.classifiers.append(nn.Linear(self.Ks["diff_factors"][diff_factor], len(self.uniq_diff_labels[diff_factor])).to(self.device))
         # NOTE: reconstruct the original data, use all latent dimensions as input
-        self.Dec = model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.0).to(self.device)
+        self.Dec = model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.2, use_batch_norm = False).to(self.device)
         # Discriminator for factor vae
-        self.disc = model.FCLayers(n_in=self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_out=2, n_cat_list=None, n_layers=3, n_hidden=2, dropout_rate=0.0).to(self.device)
+        self.disc = model.FCLayers(n_in=self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_out=2, n_cat_list=None, n_layers=3, n_hidden=2, dropout_rate=0.2, use_batch_norm = False).to(self.device)
         
         self.opt = opt.Adam(self.parameters(), lr = self.lr)
 
@@ -333,7 +333,7 @@ class scdisinfact(nn.Module):
         eps = Variable(eps)
         return eps.mul(std).add_(mu)
 
-    def inference(self, counts, batch_ids, print_stat = False, eval_model = False, clamp_comm = 0.0, clamp_diff = 0.0):
+    def inference(self, counts, batch_ids, print_stat = False, clamp_comm = 0.0, clamp_diff = 0.0):
         # sanity check
         assert counts.shape[0] == batch_ids.shape[0]
         assert batch_ids.shape[1] == 1
@@ -348,7 +348,7 @@ class scdisinfact(nn.Module):
             mu_d.append(_mu_d)
             logvar_d.append(_logvar_d)
 
-        if not eval_model:
+        if self.training:
             # latent sampling
             z_c = self.reparametrize(mu_c, logvar_c, clamp = clamp_comm)                   
             z_d = []
@@ -804,7 +804,7 @@ class scdisinfact(nn.Module):
 
             for dataset in self.data_dict["datasets"]:
                 # infer latent factor on train dataset
-                dict_inf_train = self.inference(counts = dataset.counts_norm.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True, eval_model = True)
+                dict_inf_train = self.inference(counts = dataset.counts_norm.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True)
                 # extract unshared-bio factors
                 z_d = dict_inf_train["mu_d"]                
                 for diff_factor, diff_label in enumerate(dataset.diff_labels):
@@ -814,7 +814,7 @@ class scdisinfact(nn.Module):
                     z_ds_train[diff_factor].append(z_d[diff_factor])
 
             # pass through predicting data for prediction
-            dic_inf_pred = self.inference(counts = counts_norm.to(self.device), batch_ids = curr_batch[:, None].to(self.device), print_stat = True, eval_model = True)
+            dic_inf_pred = self.inference(counts = counts_norm.to(self.device), batch_ids = curr_batch[:, None].to(self.device), print_stat = True)
             z_ds_pred = dic_inf_pred["mu_d"]
             
             diff_labels = [np.array(x) for x in diff_labels]
