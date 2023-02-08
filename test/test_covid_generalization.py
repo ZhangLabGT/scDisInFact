@@ -50,7 +50,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/covid_integrated/"
-result_dir = "results_covid/"
+result_dir = "results_covid/dropout/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -68,6 +68,8 @@ genes = pd.read_csv(data_dir + "genes_shared.txt", index_col = 0).values.squeeze
 age = meta.age.values.squeeze().astype(object)
 age[meta["age"] < 40] = "40-"
 age[(meta["age"] >= 40)&(meta["age"] < 65)] = "40-65"
+# senior or not, class is not the main issue
+# age[meta["age"] < 65] = "65-"
 age[meta["age"] >= 65] = "65+"
 meta["age"] = age
 
@@ -79,39 +81,21 @@ data_dict = scdisinfact.create_scdisinfact_dataset(counts_array, meta_cells_arra
                                                    condition_key = ["disease_severity", "age"], 
                                                    batch_key = "dataset")
 
-# # In[] Visualize the original count matrix
+# In[] Visualize the original count matrix
 
-# umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0)
+umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0)
+counts = np.concatenate([x.counts for x in data_dict["datasets"]], axis = 0)
+counts_norm = counts/(np.sum(counts, axis = 1, keepdims = True) + 1e-6) * 100
+counts_norm = np.log1p(counts_norm)
+x_umap = umap_op.fit_transform(counts_norm)
 
-# x_umap = umap_op.fit_transform(np.concatenate([x.counts_norm for x in datasets_array], axis = 0))
-# # separate into batches
-# x_umaps = []
-# for batch, _ in enumerate(counts_array):
-#     if batch == 0:
-#         start_pointer = 0
-#         end_pointer = start_pointer + counts_array[batch].shape[0]
-#         x_umaps.append(x_umap[start_pointer:end_pointer,:])
-#     elif batch == (len(counts_array) - 1):
-#         start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-#         x_umaps.append(x_umap[start_pointer:,:])
-#     else:
-#         start_pointer = start_pointer + counts_array[batch - 1].shape[0]
-#         end_pointer = start_pointer + counts_array[batch].shape[0]
-#         x_umaps.append(x_umap[start_pointer:end_pointer,:])
+utils.plot_latent(x_umap, annos = np.concatenate([x["dataset"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-# save_file = None
+utils.plot_latent(x_umap, annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "conditions1.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-# utils.plot_latent(x_umaps, annos = [x["dataset"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
+utils.plot_latent(x_umap, annos = np.concatenate([x["age"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "conditions2.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-# utils.plot_latent(x_umaps, annos = [x["disease_severity"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "conditions1.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
-
-# utils.plot_latent(x_umaps, annos = [x["age"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "conditions2.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
-
-# utils.plot_latent(x_umaps, annos = [x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array], mode = "separate", save = result_dir + "celltype_l1.png", figsize = (10, 15), axis_label = "UMAP", markerscale = 6, s = 2, label_inplace = False, text_size = "small")
-
-# utils.plot_latent(x_umaps, annos = [x["predicted.celltype.l2"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltype_l2.png", figsize = (15, 7), axis_label = "UMAP", markerscale = 6, s = 2, label_inplace = False, text_size = "small")
-
-# utils.plot_latent(x_umaps, annos = [x["predicted.celltype.l3"].values.squeeze() for x in meta_cells_array], mode = "joint", save = result_dir + "celltype_l3.png", figsize = (11, 7), axis_label = "UMAP", markerscale = 6, s = 2, label_inplace = False, text_size = "small")
+utils.plot_latent(x_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "separate", save = result_dir + "celltype_l1.png", figsize = (10, 15), axis_label = "UMAP", markerscale = 6, s = 2, label_inplace = False, text_size = "small")
 
 
 # In[]
@@ -161,18 +145,15 @@ interval = 10
 Ks = [8, 4, 4]
 
 #----------------------------------------------------------------------------
-
-print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
 model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
-print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-
-# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
+model.eval()
 
 # In[] Plot results
 z_cs = []
@@ -182,7 +163,7 @@ zs = []
 with torch.no_grad():
     for dataset in data_dict["datasets"]:
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -247,7 +228,7 @@ print("#")
 print("#-------------------------------------------------------")
 
 data_dir = "../data/covid_integrated/"
-result_dir = "results_covid/generalization_is/"
+result_dir = "results_covid/dropout/generalization_is/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -295,16 +276,15 @@ data_dict_test = {"datasets": datasets_array_test, "meta_cells": meta_cells_arra
 
 # In[]
 
-# print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
-
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-
-# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
+model.eval()
 
 # In[] Plot results
 LOSS_RECON_TRAIN = 0
@@ -346,7 +326,7 @@ with torch.no_grad():
 
     idx = np.random.choice(counts_norm.shape[0], 1000, replace = False)
     # pass through the encoders
-    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True, eval_model = True)
+    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True)
     # pass through the decoder
     dict_gen = model.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id[idx,:].to(model.device))
 
@@ -383,7 +363,7 @@ zs_train = []
 for dataset in datasets_array_train:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -471,7 +451,7 @@ with torch.no_grad():
     # select subset index
     idx = np.random.choice(counts_norm.shape[0], 1000, replace = False)
     # pass through the encoders
-    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True, eval_model = True)
+    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True)
     # pass through the decoder
     dict_gen = model.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id[idx,:].to(model.device))
 
@@ -508,7 +488,7 @@ zs_test = []
 for dataset in datasets_array_test:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -579,7 +559,7 @@ print("#")
 print("#-------------------------------------------------------")
 
 data_dir = "../data/covid_integrated/"
-result_dir = "results_covid/generalization_oos/"
+result_dir = "results_covid/dropout/generalization_oos/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -590,12 +570,8 @@ datasets_array_test = []
 meta_cells_array_train = []
 meta_cells_array_test = []
 for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    # test dataset X82: severe, 40-65, batch lee_2020
-    # NOTE: X81 cannot be used for testing (age doesn't work), arunachalam_2020 does not have severe in the training dataset
-    # X83 and X82 do have severe and 40-65 in the training dataset
-
-    # X33, healthy, 40-
-    test_idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
+    # X33, healthy, 40-, wilk_2020
+    test_idx = ((meta_cells["disease_severity"] == "moderate") & (meta_cells["age"] == "40-65") & (meta_cells["dataset"] == "lee_2020")).values
     train_idx = ~test_idx
 
     if np.sum(train_idx) > 0:
@@ -629,11 +605,11 @@ model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 
+model.train()
 losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-
 torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-
+model.eval()
 
 # In[] Plot results
 LOSS_RECON_TRAIN = 0
@@ -675,7 +651,7 @@ with torch.no_grad():
 
     idx = np.random.choice(counts_norm.shape[0], 1000, replace = False)
     # pass through the encoders
-    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True, eval_model = True)
+    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True)
     # pass through the decoder
     dict_gen = model.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id[idx,:].to(model.device))
 
@@ -712,7 +688,7 @@ zs_train = []
 for dataset in datasets_array_train:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -801,7 +777,7 @@ with torch.no_grad():
     # select subset index
     idx = np.random.choice(counts_norm.shape[0], 1000, replace = False)
     # pass through the encoders
-    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True, eval_model = True)
+    dict_inf = model.inference(counts = counts_norm[idx,:].to(model.device), batch_ids = batch_id[idx,:].to(model.device), print_stat = True)
     # pass through the decoder
     dict_gen = model.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id[idx,:].to(model.device))
 
@@ -830,7 +806,7 @@ print(f"LOSS GL D: {LOSS_GL_D_TEST}")
 
 del counts_norm, batch_id, mmd_batch_id, size_factor, counts, diff_labels, dict_inf, dict_gen, losses
 
-# In[]
+# In[] Plot separately does not convey any meaning
 z_cs_test = []
 z_ds_test = []
 zs_test = []
@@ -838,7 +814,7 @@ zs_test = []
 for dataset in datasets_array_test:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -849,40 +825,40 @@ for dataset in datasets_array_test:
         z_cs_test.append(z_c.cpu().detach().numpy())
         zs_test.append(np.concatenate([z_cs_test[-1]] + z_ds_test[-1], axis = 1))
 
-# UMAP
-umap_op = UMAP(min_dist = 0.1, random_state = 0)
-z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs_test, axis = 0))
-z_ds_umap = []
-z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds_test], axis = 0)))
-z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[1] for z_d in z_ds_test], axis = 0)))
+# # UMAP
+# umap_op = UMAP(min_dist = 0.1, random_state = 0)
+# z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs_test, axis = 0))
+# z_ds_umap = []
+# z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds_test], axis = 0)))
+# z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[1] for z_d in z_ds_test], axis = 0)))
 
-comment = f'figures_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
-if not os.path.exists(result_dir + comment):
-    os.makedirs(result_dir + comment)
+# comment = f'figures_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
+# if not os.path.exists(result_dir + comment):
+#     os.makedirs(result_dir + comment)
 
 
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_celltypes_l1_test.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_cond1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["age"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_cond2_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_celltypes_l1_test.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_cond1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["age"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_cond2_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff1_celltypes_l1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff1_cond1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff1_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff1_celltypes_l1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff1_cond1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff1_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff2_celltypes_l1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["age"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff2_cond2_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
-    mode = "annos", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff2_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff2_celltypes_l1_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["age"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff2_cond2_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in meta_cells_array_test]), batches = np.concatenate([x["dataset"].values.squeeze() for x in meta_cells_array_test]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff2_batches_test.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 # In[]
 z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs_train + z_cs_test))
