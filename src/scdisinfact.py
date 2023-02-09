@@ -124,7 +124,7 @@ def create_scdisinfact_dataset(counts, meta_cells, condition_key, batch_key, bat
     if type(counts) == list:
         try:
             if sp.issparse(counts[0]):
-                counts = sp.vstack(counts, format = "csr")
+                counts = sp.vstack(counts, format = "csr").toarray()
             else:
                 counts = np.concatenate(counts, axis = 0)
         except:
@@ -133,6 +133,9 @@ def create_scdisinfact_dataset(counts, meta_cells, condition_key, batch_key, bat
     else:
         # make sure to be dataframe
         meta_cells = pd.DataFrame(meta_cells)
+        if sp.issparse(counts):
+            counts = counts.toarray()
+        
         
     # construct batch_cond pairs that combine batch id with condition types
     if batch_cond_key is None:
@@ -153,7 +156,6 @@ def create_scdisinfact_dataset(counts, meta_cells, condition_key, batch_key, bat
     batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze(), sort = True)
     meta_cells["batch_cond_id"] = batch_cond_ids
 
-    counts = counts.toarray()
     # normalize the count matrix
     size_factor = np.tile(np.sum(counts, axis = 1, keepdims = True), (1, counts.shape[1]))/100
     # in scanpy, np.median(counts) is used instead of 100 here

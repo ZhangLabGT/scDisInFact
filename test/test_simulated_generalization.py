@@ -3,15 +3,23 @@ import sys, os
 import torch
 import numpy as np 
 import pandas as pd
+
 sys.path.append("../src")
-import scdisinfact as scdisinfact
+import scdisinfact
 import utils
+import bmk
 from umap import UMAP
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import time
 import scipy.stats as stats
+import matplotlib.pyplot as plt
+import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+
+from sklearn.metrics import r2_score 
 
 # In[]
 sigma = 0.4

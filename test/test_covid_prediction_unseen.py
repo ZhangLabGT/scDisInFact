@@ -50,7 +50,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/covid_integrated/"
-result_dir = "results_covid/dropout/prediction/"
+result_dir = "results_covid/dropout/prediction_unseen/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -79,6 +79,43 @@ data_dict = scdisinfact.create_scdisinfact_dataset(counts_array, meta_cells_arra
                                                    condition_key = ["disease_severity", "age"], 
                                                    batch_key = "dataset")
                     
+# construct training and testing data
+np.random.seed(0)
+datasets_array_train = []
+datasets_array_test = []
+meta_cells_array_train = []
+meta_cells_array_test = []
+for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
+    # NOTE: X52, moderate, 40-65, lee_2020
+    test_idx = ((meta_cells["disease_severity"] == "moderate") & (meta_cells["age"] == "40-65") & (meta_cells["dataset"] == "lee_2020")).values
+    train_idx = ~test_idx
+
+    if np.sum(train_idx) > 0:
+        dataset_train = scdisinfact.scdisinfact_dataset(counts = dataset[train_idx]["counts"], 
+                                                        counts_norm = dataset[train_idx]["counts_norm"],
+                                                        size_factor = dataset[train_idx]["size_factor"],
+                                                        diff_labels = dataset[train_idx]["diff_labels"],
+                                                        batch_id = dataset[train_idx]["batch_id"],
+                                                        mmd_batch_id = dataset[train_idx]["mmd_batch_id"]
+                                                        )
+        datasets_array_train.append(dataset_train)
+        meta_cells_array_train.append(meta_cells.iloc[train_idx,:])
+    
+    if np.sum(test_idx) > 0:
+        dataset_test = scdisinfact.scdisinfact_dataset(counts = dataset[test_idx]["counts"], 
+                                                    counts_norm = dataset[test_idx]["counts_norm"],
+                                                    size_factor = dataset[test_idx]["size_factor"],
+                                                    diff_labels = dataset[test_idx]["diff_labels"],
+                                                    batch_id = dataset[test_idx]["batch_id"],
+                                                    mmd_batch_id = dataset[test_idx]["mmd_batch_id"]
+                                                    )
+        datasets_array_test.append(dataset_test)
+        meta_cells_array_test.append(meta_cells.iloc[test_idx,:])
+
+data_dict_train = {"datasets": datasets_array_train, "meta_cells": meta_cells_array_train, "matching_dict": data_dict["matching_dict"], "scaler": data_dict["scaler"]}
+data_dict_test = {"datasets": datasets_array_test, "meta_cells": meta_cells_array_test, "matching_dict": data_dict["matching_dict"], "scaler": data_dict["scaler"]}
+
+
 # In[]
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #
@@ -128,24 +165,22 @@ lr = 5e-4
 #----------------------------------------------------------------------------
 
 print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-# model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+model.train()
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 model.eval()
-# check dropout is working
-print(model.training)
 # In[] Plot results
 z_cs = []
 z_ds = []
 zs = []
 
-for dataset in data_dict["datasets"]:
+for dataset in data_dict_train["datasets"]:
     with torch.no_grad():
         # pass through the encoders
         dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
@@ -173,67 +208,65 @@ if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
 
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes_l1.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l2"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
-    mode = "annos", axis_label = "UMAP", figsize = (17,7), save = (result_dir + comment+"common_dims_celltypes_l2.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l3"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes_l3.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l2"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+    mode = "joint", axis_label = "UMAP", figsize = (17,7), save = (result_dir + comment+"common_dims_celltypes_l2.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l3"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+    mode = "joint", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes_l3.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "separate", axis_label = "UMAP", figsize = (10,21), save = (result_dir + comment+"common_dims_celltypes_l1_separate.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
 
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["age"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["age"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims1_celltypes_l1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims1_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["disease_severity"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims1_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims2_celltypes_l1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["age"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["age"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims2_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
+utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims2_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 
-# In[] Make prediction
+# In[]
+# NOTE: note scenario 1 and 2 can also be achieved with 1 scgen/scpregan model too. The training would be 
+# scenario 1: traing with data from healthy 40-, healthy 40-65. Input moderate 40-, predict moderate 40-65 (make it easy, of data from lee_2020)
 print("# -------------------------------------------------------------------------------------------")
 print("#")
-print("# 1. select the dataset within the same condition, test the prediction of batch effect.")
+print("# 1. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: moderate, 40-, lee_2020")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] != "wilk_2020")).values
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "moderate") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "lee_2020")).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
 counts_input = np.concatenate(counts_input, axis = 0)
 meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
 counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-                                      batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = "wilk_2020")
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
-# # sanity check, if the condition is the same
-# counts_predict2 = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-#                                       batch_key = "dataset", predict_conds = None, predict_batch = "wilk_2020") 
-# assert np.allclose(counts_predict, counts_predict2)
+
 
 counts_gt = []
 meta_gt = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
 
 counts_gt = np.concatenate(counts_gt, axis = 0)
 meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
@@ -279,47 +312,42 @@ scores1["Pearson input"] = pearsons_input
 scores1["R2"] = r2_scdisinfact
 scores1["R2 input"] = r2_input
 scores1["Method"] = "scdisinfact"
-scores1["Prediction"] = "batch effect"
+scores1["Prediction"] = "unseen (moderate, 40-, lee_2020)"
 
-# In[]
+# In[] 
 print("# -------------------------------------------------------------------------------------------")
 print("#")
-print("# 2. select the dataset within the same batch, test the prediction of condition effect.")
+print("# 2. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: healthy, 40-65, lee_2020")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
-
-# predict disease severity effect
+# scenario 2: traing with data from healthy 40-, moderate 40-. Input healthy 40-65, predict moderate 40-65 (make it easy, of data from lee_2020)
 counts_input = []
 meta_input = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] != "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-65") & (meta_cells["dataset"] == "lee_2020")).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
 counts_input = np.concatenate(counts_input, axis = 0)
 meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
 counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-                                      batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = "wilk_2020")
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
-# # PASSED: sanity check , the original batch is already lee_2020, so predict batch should be the same 
-# counts_predict2 = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-#                                       batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = None)
-# assert np.allclose(counts_predict, counts_predict2)
+
 
 counts_gt = []
 meta_gt = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
 
 counts_gt = np.concatenate(counts_gt, axis = 0)
 meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
 print("ground truth:")
 print([x for x in np.unique(meta_gt["batch_cond"].values)])
 
-# normalize the count
+# optional: normalize the count
 counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
 counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
 counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
@@ -358,29 +386,35 @@ scores2["Pearson input"] = pearsons_input
 scores2["R2"] = r2_scdisinfact
 scores2["R2 input"] = r2_input
 scores2["Method"] = "scdisinfact"
-scores2["Prediction"] = "condition effect (disease severity)"
+scores2["Prediction"] = "unseen (healthy, 40-65, lee_2020)"
 
-# predict age effect
+# In[] 
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 3. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: healthy, 65+, lee_2020")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+# scenario 3: for scgen/scpregan, need a cascade of two model, one predict disease effect, another predict age effect. 
 counts_input = []
 meta_input = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = (((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] != "40-")) & (meta_cells["dataset"] == "wilk_2020")).values
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "65+") & (meta_cells["dataset"] == "lee_2020")).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
 counts_input = np.concatenate(counts_input, axis = 0)
 meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
 counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-                                      batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = "wilk_2020")
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
+
 counts_gt = []
 meta_gt = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
 
 counts_gt = np.concatenate(counts_gt, axis = 0)
 meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
@@ -426,36 +460,35 @@ scores3["Pearson input"] = pearsons_input
 scores3["R2"] = r2_scdisinfact
 scores3["R2 input"] = r2_input
 scores3["Method"] = "scdisinfact"
-scores3["Prediction"] = "condition effect (age)"
+scores3["Prediction"] = "unseen (healthy, 65+, lee_2020)"
 
 # In[]
+# NOTE: include batch effect
 print("# -------------------------------------------------------------------------------------------")
 print("#")
-print("# 3. test the prediction of both condition and batch effect")
+print("# 4. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: moderate, 40-, !lee_2020")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
-
-# predict disease severity effect + batch effect
 counts_input = []
 meta_input = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] != "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] != "wilk_2020")).values
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "moderate") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] != "lee_2020")).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
 counts_input = np.concatenate(counts_input, axis = 0)
 meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
 counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-                                      batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = "wilk_2020")
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
+
 counts_gt = []
 meta_gt = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
 
 counts_gt = np.concatenate(counts_gt, axis = 0)
 meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
@@ -501,29 +534,34 @@ scores4["Pearson input"] = pearsons_input
 scores4["R2"] = r2_scdisinfact
 scores4["R2 input"] = r2_input
 scores4["Method"] = "scdisinfact"
-scores4["Prediction"] = "condition effect (disease severity) + batch effect"
+scores4["Prediction"] = "unseen (moderate, 40-, !lee_2020)"
 
-# predict age effect
+# In[] 
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 5. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: healthy, 40-65, !lee_2020")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = (((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] != "40-")) & (meta_cells["dataset"] != "wilk_2020")).values
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-65") & (meta_cells["dataset"] != "lee_2020")).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
 counts_input = np.concatenate(counts_input, axis = 0)
 meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
 counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
-                                      batch_key = "dataset", predict_conds = ["healthy", "40-"], predict_batch = "wilk_2020")
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
+
 counts_gt = []
 meta_gt = []
-for dataset, meta_cells in zip(data_dict["datasets"], data_dict["meta_cells"]):
-    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "40-") & (meta_cells["dataset"] == "wilk_2020")).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
 
 counts_gt = np.concatenate(counts_gt, axis = 0)
 meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
@@ -569,27 +607,97 @@ scores5["Pearson input"] = pearsons_input
 scores5["R2"] = r2_scdisinfact
 scores5["R2 input"] = r2_input
 scores5["Method"] = "scdisinfact"
-scores5["Prediction"] = "condition effect (age) + batch effect"
+scores5["Prediction"] = "unseen (healthy, 40-65, !lee_2020)"
 
-scores = pd.concat([scores1, scores2, scores3, scores4, scores5], axis = 0)
+# In[] 
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 6. Test on the unseen combination: moderate, 40-65, lee_2020. Input: training data of condition: healthy, 65+, !lee_2020")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_input = []
+meta_input = []
+for dataset, meta_cells in zip(data_dict_train["datasets"], data_dict_train["meta_cells"]):
+    idx = ((meta_cells["disease_severity"] == "healthy") & (meta_cells["age"] == "65+") & (meta_cells["dataset"] != "lee_2020")).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["disease_severity", "age"], 
+                                      batch_key = "dataset", predict_conds = ["moderate", "40-65"], predict_batch = "lee_2020")
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_test["datasets"], data_dict_test["meta_cells"]):
+    counts_gt.append(dataset.counts.numpy())
+    meta_gt.append(meta_cells)
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# optional: normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["predicted.celltype.l1"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["predicted.celltype.l1"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["predicted.celltype.l1"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["predicted.celltype.l1"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts[i,:])[0] for i in range(mean_gts.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts[i,:])[0] for i in range(mean_gts.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts[i,:]) for i in range(mean_gts.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts[i,:]) for i in range(mean_gts.shape[0])])
+
+scores6 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores6["MSE"] = mses_scdisinfact
+scores6["MSE input"] = mses_input
+scores6["Pearson"] = pearsons_scdisinfact
+scores6["Pearson input"] = pearsons_input
+scores6["R2"] = r2_scdisinfact
+scores6["R2 input"] = r2_input
+scores6["Method"] = "scdisinfact"
+scores6["Prediction"] = "unseen (healthy, 65+, !lee_2020)"
+
+scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
 scores.to_csv(result_dir + "scores.csv")
+
 
 # In[]
 # Drop-out does improve the performance
-scores = pd.read_csv("results_covid/no_dropout/prediction/scores.csv", index_col = 0)
-scores_dropout = pd.read_csv("results_covid/dropout/prediction/scores.csv", index_col = 0)
-scores_scgen = pd.read_csv("results_covid/scGEN/scores_scgen.csv", index_col = 0)
-scores_scpregan = pd.read_csv("results_covid/scPreGAN/scores_scpregan.csv", index_col = 0)
-scores_dropout["Method"] = "scdisinfact-dropout"
-scores = pd.concat([scores, scores_dropout, scores_scgen, scores_scpregan], axis = 0)
+scores_dropout = pd.read_csv("results_covid/dropout/prediction_unseen/scores.csv", index_col = 0)
+scores_scgen = pd.read_csv("results_covid/scGEN_unseen/scores_scgen.csv", index_col = 0)
+scores_scpregan = pd.read_csv("results_covid/scPreGAN_unseen/scores_scpregan.csv", index_col = 0)
+scores = pd.concat([scores_dropout, scores_scgen, scores_scpregan], axis = 0)
+scores = scores[(scores["Prediction"] != 'unseen (healthy, 65+, !lee_2020)')&(scores["Prediction"] != 'unseen (healthy, 65+, lee_2020)')]
 
-scores.loc[scores["Prediction"] == "condition effect (disease severity)", "Prediction"] = "Severity\n(w/o batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (age)", "Prediction"] = "Age\n(w/o batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (disease severity) + batch effect", "Prediction"] = "Severity\n(w/ batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (age) + batch effect", "Prediction"] = "Age\n(w/ batch effect)"
-
-scores = scores[(scores["Prediction"] != "batch effect") & (scores["Method"] != "scdisinfact")]
-scores.loc[scores["Method"] == "scdisinfact-dropout", "Method"] = "scdisinfact"
+scores.loc[scores["Prediction"] == "unseen (healthy, 40-65, lee_2020)", "Prediction"] = "Severity\n(w/o batch effect)"
+scores.loc[scores["Prediction"] == "unseen (moderate, 40-, lee_2020)", "Prediction"] = "Age\n(w/o batch effect)"
+scores.loc[scores["Prediction"] == "unseen (healthy, 40-65, !lee_2020)", "Prediction"] = "Severity\n(w/ batch effect)"
+scores.loc[scores["Prediction"] == "unseen (moderate, 40-, !lee_2020)", "Prediction"] = "Age\n(w/ batch effect)"
 
 import seaborn as sns
 plt.rcParams["font.size"] = 15
@@ -608,11 +716,13 @@ ax[2].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbo
 ax[0].set_xlabel(None)
 ax[1].set_xlabel(None)
 ax[2].set_xlabel(None)
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
 
 # remove some outliers
-ax[0].set_ylim(0, 0.002)
-ax[2].set_ylim(-0.5, 1.1)
-ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
-fig.savefig("results_covid/dropout/prediction/scores.png", bbox_inches = "tight")
+# ax[0].set_ylim(0, 0.002)
+# ax[2].set_ylim(-0.5, 1.1)
+fig.savefig("results_covid/dropout/prediction_unseen/scores.png", bbox_inches = "tight")
+
+
 
 # %%
