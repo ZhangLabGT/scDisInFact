@@ -82,7 +82,7 @@ meta_cells_array = [meta[meta["dataset"] == "arunachalam_2020"], meta[meta["data
 
 # no mmd batches
 data_dict = scdisinfact.create_scdisinfact_dataset(counts_array, meta_cells_array, 
-                                                   condition_key = ["disease_severity"], 
+                                                   condition_key = ["disease_severity", "age"], 
                                                    batch_key = "dataset")
 
 # # In[] Visualize the original count matrix

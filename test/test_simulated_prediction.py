@@ -17,1039 +17,1311 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 from sklearn.metrics import r2_score 
 
 # In[]
-# sigma = 0.4
-# n_diff_genes = 20
-# diff = 8
-# ngenes = 500
-# ncells_total = 10000 
-# n_batches = 6
-# data_dir = f"../data/simulated/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-# result_dir = f"./simulated/prediction/1condition_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-# if not os.path.exists(result_dir):
-#     os.makedirs(result_dir)
-
-data_dir = f"../data/simulated/" + sys.argv[1] + "/"
-# lsa performs the best
-result_dir = f"./simulated/prediction/" + sys.argv[1] + "/"
-n_diff_genes = eval(sys.argv[1].split("_")[4])
-n_batches = 6
+sigma = 0.4
+n_diff_genes = 100
+diff = 8
+ngenes = 500
+ncells_total = 10000 
+n_batches = 2
+data_dir = f"../data/simulated/unif/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+result_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
 # TODO: randomly remove some celltypes?
-counts_ctrls = []
-counts_stims1 = []
-counts_stims2 = []
+counts_gt = []
+counts_ctrl_healthy = []
+counts_ctrl_severe = []
+counts_stim_healthy = []
+counts_stim_severe = []
 # cell types
 label_annos = []
-# batch labels
-label_batches = []
-counts_gt = []
-label_ctrls = []
-label_stims1 = []
-label_stims2 = []
-np.random.seed(0)
+
 for batch_id in range(n_batches):
     counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
-    counts_ctrls.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl.txt', sep = "\t", header = None).values.T)
-    counts_stims1.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim1.txt', sep = "\t", header = None).values.T)
-    counts_stims2.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim2.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_healthy.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_severe.txt', sep = "\t", header = None).values.T)
+    counts_stim_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_healthy.txt', sep = "\t", header = None).values.T)
+    counts_stim_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_severe.txt', sep = "\t", header = None).values.T)
+
     anno = pd.read_csv(data_dir + f'cell_label{batch_id + 1}.txt', sep = "\t", index_col = 0).values.squeeze()
     # annotation labels
-    label_annos.append(np.array([('cell type '+str(i)) for i in anno]))
-    # batch labels
-    label_batches.append(np.array(['batch ' + str(batch_id)] * counts_ctrls[-1].shape[0]))
-    label_ctrls.append(np.array(["ctrl"] * counts_ctrls[-1].shape[0]))
-    label_stims1.append(np.array(["stim1"] * counts_stims1[-1].shape[0]))
-    label_stims2.append(np.array(["stim2"] * counts_stims2[-1].shape[0]))
-    
+    label_annos.append(np.array([('cell type '+str(i)) for i in anno]))    
 
 # In[]
-# Train with ctrl in batches 1 & 2, stim1 in batches 3 & 4, stim2 in batches 5 & 6
-label_conditions = label_ctrls[0:2] + label_stims1[2:4] + label_stims2[4:]
-# sub
-# label_conditions = label_ctrls[0:2] + label_stims1[2:]
-# sub2
-# label_conditions = label_stims1[0:2] + label_stims2[2:]
+# NOTE: select counts for each batch
+np.random.seed(0)
+counts_gt_test = []
+counts_test = []
+meta_cells = []
+for batch_id in range(n_batches):
+    # generate permutation
+    permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
+    # since there are totally four combinations of conditions, separate the cells into four groups
+    chuck_size = int(counts_gt[batch_id].shape[0]/4)
+    counts_gt_test.append(counts_gt[batch_id][permute_idx,:])
 
-condition_ids, condition_names = pd.factorize(np.concatenate(label_conditions, axis = 0))
-batch_ids, batch_names = pd.factorize(np.concatenate(label_batches, axis = 0))
-anno_ids, anno_names = pd.factorize(np.concatenate(label_annos, axis = 0))
+    counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                       counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                       counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                       counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
 
-counts = np.concatenate(counts_ctrls[0:2] + counts_stims1[2:4] + counts_stims2[4:], axis = 0)
-# sub
-# counts = np.concatenate(counts_ctrls[0:2] + counts_stims1[2:], axis = 0)
-# sub2
-# counts = np.concatenate(counts_stims1[0:2] + counts_stims2[2:], axis = 0)
+    
+    meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+    meta_cell["batch"] = np.array([batch_id] * counts_gt[batch_id].shape[0])
+    meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+    meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+    meta_cell["annos"] = label_annos[batch_id][permute_idx]
+    meta_cells.append(meta_cell)
 
-datasets = []
-for batch_id, batch_name in enumerate(batch_names):
-        datasets.append(scdisinfact.dataset(counts = counts[batch_ids == batch_id,:], 
-                                            anno = anno_ids[batch_ids == batch_id], 
-                                            diff_labels = [condition_ids[batch_ids == batch_id]], 
-                                            batch_id = batch_ids[batch_ids == batch_id]))
+data_dict_full = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 
 
+# In[]
+# # check the visualization before integration
+# umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
+# counts = np.concatenate([x.counts for x in data_dict_full["datasets"]], axis = 0)
+# counts_norm = counts/(np.sum(counts, axis = 1, keepdims = True) + 1e-6) * 100
+# counts_norm = np.log1p(counts_norm)
+# x_umap = umap_op.fit_transform(counts_norm)
 
-'''
-# check the visualization before integration
-umap_op = UMAP(n_components = 2, n_neighbors = 15, min_dist = 0.4, random_state = 0) 
+# utils.plot_latent(x_umap, annos = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), mode = "annos", save = result_dir + "batches.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-counts_norms = []
-for batch in range(n_batches):
-    counts_norms.append(datasets[batch].counts_norm)
+# utils.plot_latent(x_umap, annos = np.concatenate([x["condition 1"].values.squeeze() for x in data_dict_full["meta_cells"]]), mode = "annos", save = result_dir + "conditions1.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-x_umap = umap_op.fit_transform(np.concatenate(counts_norms, axis = 0))
-# separate into batches
-x_umaps = []
-for batch in range(n_batches):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + counts_norms[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-    elif batch == (n_batches - 1):
-        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
-    else:
-        start_pointer = start_pointer + counts_norms[batch - 1].shape[0]
-        end_pointer = start_pointer + counts_norms[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+# utils.plot_latent(x_umap, annos = np.concatenate([x["condition 2"].values.squeeze() for x in data_dict_full["meta_cells"]]), mode = "annos", save = result_dir + "conditions2.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
 
-save_file = None
+# utils.plot_latent(x_umap, annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), mode = "separate", save = result_dir + "annos.png", figsize = (10, 10), axis_label = "UMAP", markerscale = 6, s = 2, label_inplace = False, text_size = "small")
 
-utils.plot_latent(x_umaps, annos = label_annos, mode = "modality", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
-
-utils.plot_latent(x_umaps, annos = label_conditions, mode = "joint", save = save_file, figsize = (15,10), axis_label = "UMAP", markerscale = 6)
-'''
 
 
 # In[] training the model
 # TODO: track the time usage and memory usage
 import importlib 
 importlib.reload(scdisinfact)
-start_time = time.time()
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 0.1
+reg_gl = 1
 reg_tc = 0.5
 reg_class = 1
-reg_kl = 1e-6
+reg_kl = 1e-5
+reg_contr = 0.01
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl]
-Ks = [8, 4]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+Ks = [8, 4, 4]
+
+batch_size = 64
 nepochs = 50
 interval = 10
-print("GPU memory usage: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-model = scdisinfact.scdisinfact(datasets = datasets, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+lr = 5e-4
+
+model = scdisinfact.scdisinfact(data_dict = data_dict_full, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
-print("GPU memory usage after constructing model: {:f}MB".format(torch.cuda.memory_allocated(device)/1024/1024))
-# # train_joint is more efficient, but does not work as well compared to train
-# model.train()
+model.train()
 # losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-
-# end_time = time.time()
-# print("time cost: {:.2f}".format(end_time - start_time))
-
 # torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth", map_location = device))
-
 _ = model.eval()
 
 # In[] Plot results
-z_cs = []
-z_ds = []
-zs = []
-# one forward pass
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets):
-        # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-        # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-        z_c = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
-        mu = dict_gen["mu"]
-        z_cs.append(z_c.cpu().detach().numpy())
-        zs.append(z.cpu().detach().numpy())
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])   
+# z_cs = []
+# z_ds = []
+# zs = []
 
-# UMAP
-umap_op = UMAP(min_dist = 0.1, random_state = 0)
-z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
+# for dataset in data_dict_full["datasets"]:
+#     with torch.no_grad():
+#         # pass through the encoders
+#         dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+#         # pass through the decoder
+#         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+#         z_c = dict_inf["mu_c"]
+#         z_d = dict_inf["mu_d"]
+#         z = torch.cat([z_c] + z_d, dim = 1)
+#         mu = dict_gen["mu"]    
+#         z_ds.append([x.cpu().detach().numpy() for x in z_d])
+#         z_cs.append(z_c.cpu().detach().numpy())
+#         zs.append(np.concatenate([z_cs[-1]] + z_ds[-1], axis = 1))
 
-z_ds_umap = []
-for diff_factor in range(model.n_diff_factors):
-    z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[diff_factor] for z_d in z_ds], axis = 0)))
-
-zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
-
-z_ds_umaps = [[] * model.n_diff_factors]
-z_cs_umaps = []
-zs_umaps = []
-for batch in range(n_batches):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + zs[batch].shape[0]
-
-        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
-        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
-        for diff_factor in range(model.n_diff_factors):
-            z_ds_umaps[diff_factor].append(z_ds_umap[diff_factor][start_pointer:end_pointer,:])
+# # UMAP
+# umap_op = UMAP(min_dist = 0.1, random_state = 0)
+# pca_op = PCA(n_components = 2)
+# z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
+# z_ds_umap = []
+# z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
+# z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[1] for z_d in z_ds], axis = 0)))
+# zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
 
-    elif batch == (n_batches - 1):
-        start_pointer = start_pointer + zs[batch - 1].shape[0]
-
-        z_cs_umaps.append(z_cs_umap[start_pointer:,:])
-        zs_umaps.append(zs_umap[start_pointer:,:])
-        for diff_factor in range(model.n_diff_factors):
-            z_ds_umaps[diff_factor].append(z_ds_umap[diff_factor][start_pointer:,:])
-
-    else:
-        start_pointer = start_pointer + zs[batch - 1].shape[0]
-        end_pointer = start_pointer + zs[batch].shape[0]
-
-        z_cs_umaps.append(z_cs_umap[start_pointer:end_pointer,:])
-        zs_umaps.append(zs_umap[start_pointer:end_pointer,:])
-        for diff_factor in range(model.n_diff_factors):
-            z_ds_umaps[diff_factor].append(z_ds_umap[diff_factor][start_pointer:end_pointer,:])
-
-comment = f"fig_{Ks}_{lambs}/"
-if not os.path.exists(result_dir + comment):
-    os.makedirs(result_dir + comment)
-
-utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_celltypes.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = label_annos, mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"common_celltypes_sep.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_batches.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = z_cs_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"common_condition.png" if result_dir else None, markerscale = 6, s = 5)
-
-for diff_factor in range(model.n_diff_factors):
-    utils.plot_latent(zs = z_ds_umaps[diff_factor], annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+f"diff{diff_factor}_celltypes.png" if result_dir else None, markerscale = 6, s = 5)
-    utils.plot_latent(zs = z_ds_umaps[diff_factor], annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+f"diff{diff_factor}_batch.png" if result_dir else None, markerscale = 6, s = 5)
-    utils.plot_latent(zs = z_ds_umaps[diff_factor], annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+f"diff{diff_factor}_condition.png" if result_dir else None, markerscale = 6, s = 5)
-
-# In[] Extract predicted matrix of scGEN and scDisInFact
-plt.rcParams["font.size"] = 15
-np.random.seed(0)
-
-#-------------------------------------------------------------------------------------------------------------------
-#
-# scGEN
-#
-#-------------------------------------------------------------------------------------------------------------------
-result_scgen = result_dir + "scGEN_scenario1/"
-X_scgen_imputes = []
-for batch_id in [2,3,4,5]:
-    X_scgen_imputes.append(np.loadtxt(result_scgen + f"GxC{batch_id + 1}_ctrl_impute.txt").T)
-    # make non-negative
-    X_scgen_imputes[-1] = X_scgen_imputes[-1] * (X_scgen_imputes[-1] > 0)
-
-#-------------------------------------------------------------------------------------------------------------------
-#
-# scPreGAN
-#
-#-------------------------------------------------------------------------------------------------------------------
-result_scpregan = result_dir + "scPreGAN_scenario1/"
-X_scpregan_imputes = []
-for batch_id in [2,3,4,5]:
-    X_scpregan_imputes.append(np.loadtxt(result_scpregan + f"GxC{batch_id + 1}_ctrl_impute.txt").T)
-    # make non-negative
-    X_scpregan_imputes[-1] = X_scpregan_imputes[-1] * (X_scpregan_imputes[-1] > 0)
-
-#-------------------------------------------------------------------------------------------------------------------
-#
-# scDisInFact
-#
-#-------------------------------------------------------------------------------------------------------------------
-z_cs = []
-z_ds = []
-zs = []
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets):
-        # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-        # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-        z_c = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
-        mu = dict_gen["mu"]
-        z_cs.append(z_c.cpu().detach().numpy())
-        zs.append(z.cpu().detach().numpy())
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])   
+# comment = f'figures_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
+# if not os.path.exists(result_dir + comment):
+#     os.makedirs(result_dir + comment)
 
 
-# NOTE: impute control for batches 3, 4, 5, 6, only removed of conditions
-# control, batch 0 and 1
-mean_ctrl = np.mean(np.concatenate([x[0] for x in z_ds[0:2]], axis = 0), axis = 0)[None,:]
-# stim1, batch 2 and 3
-mean_stim1 = np.mean(np.concatenate([x[0] for x in z_ds[2:4]], axis = 0), axis = 0)[None,:]
-# stim2, batch 4 and 5
-mean_stim2 = np.mean(np.concatenate([x[0] for x in z_ds[4:]], axis = 0), axis = 0)[None,:]
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_annos.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "separate", axis_label = "UMAP", figsize = (10,10), save = (result_dir + comment+"common_dims_annos_separate.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
 
-z_ds_ctrl = np.concatenate([x[0] for x in z_ds[0:2]], axis = 0)
-# find the clostest
-# mean_ctrl = z_ds_ctrl[[np.argmin(np.sum((z_ds_ctrl - mean_ctrl) ** 2, axis = 1))], :]
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["condition 1"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["condition 2"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-change_stim1_ctrl = mean_ctrl - mean_stim1
-change_stim2_ctrl = mean_ctrl - mean_stim2
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims1_annos.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["condition 1"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims1_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "batches", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims1_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
-
-X_scdisinfact_imputes = []
-zs = []
-z_ds_impute = []
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets):
-        #-------------------------------------------------------------------------------------------------------------------
-        #
-        # Remove both batch effect and condition effect (Imputation of count matrices under the control condition)
-        #
-        #-------------------------------------------------------------------------------------------------------------------
-        
-        # removed of batch effect, 
-        # NOTE: when calculating MSE using the true count, all batches are free of batch effect and condition effect.
-        # Now we remove the condition effect, and align all batches to batch 0, but batches then all have a shift towards
-        # the 1st batch. Need to update the simulator to remove the batch effect of batch 0.
-        ref_batch = 0.0
-        # still use the original batch_id as input, not change the latent embedding
-        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-        if batch_id in [0,1]:
-            z_d = []
-            for Enc_d in model.Enc_ds:
-                # still use the original batch_id as input, not change the latent embedding
-                _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-                z_d.append(_z_d)        
-
-        elif batch_id in [2,3,4,5]:
-            # NOTE: removed of condition effect
-            # manner one, use mean
-            # z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
-            
-            # manner two, random sample, better than mean
-            # idx = np.random.choice(z_ds_ctrl.shape[0], z_c.shape[0], replace = True)
-            # z_d = [torch.tensor(z_ds_ctrl[idx,:], device = model.device)]
-            
-            # manner three, latent space arithmetics
-            if batch_id in [2,3]:
-                z_d = z_ds[batch_id][0] + change_stim1_ctrl
-            else:
-                z_d = z_ds[batch_id][0] + change_stim2_ctrl 
-            z_d = [torch.tensor(z_d, device = model.device)]
-
-        z_ds_impute.append(z_d[0].detach().cpu().numpy())
-        # change the batch_id into ref batch as input
-        z = torch.concat([z_c] + z_d + [torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None]], axis = 1)        
-        zs.append(z.cpu().detach().numpy())
-
-        # NOTE: change the batch_id into ref batch as input, change the diff condition into control
-        mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
-        mu_impute = mu_impute.cpu().detach().numpy() 
-
-        X_scdisinfact_imputes.append(mu_impute)
-        
-
-# In[] Compare with baseline
-# -------------------------------------------------------------------------------
-#
-# cell-specific scores with ground truth
-#
-# -------------------------------------------------------------------------------
-mses_scdisinfact = []
-mses_diff_scdisinfact = []
-pearsons_scdisinfact = []
-r2_scdisinfact = []
-r2_diff_scdisinfact = []
-
-mses_scgen = []
-mses_diff_scgen = []
-pearsons_scgen = []
-r2_scgen = []
-r2_diff_scgen = []
-
-mses_scpregan = []
-mses_diff_scpregan = []
-pearsons_scpregan = []
-r2_scpregan = []
-r2_diff_scpregan = []
-
-for i, batch_id in enumerate([2, 3, 4, 5]):
-    # load impute and ground truth matrices
-    X_scdisinfact_impute = X_scdisinfact_imputes[batch_id]
-    X_scgen_impute = X_scgen_imputes[i]
-    X_scpregan_impute = X_scpregan_imputes[i]
-    X_gt = counts_gt[batch_id]
-    
-    # normalize the counts
-    X_scdisinfact_impute_norm = X_scdisinfact_impute/np.sum(X_scdisinfact_impute, axis = 1, keepdims = True)
-    X_scgen_impute_norm = X_scgen_impute/np.sum(X_scgen_impute, axis = 1, keepdims = True)
-    X_scpregan_impute_norm = X_scpregan_impute/np.sum(X_scpregan_impute, axis = 1, keepdims = True)
-    X_gt_norm = X_gt/np.sum(X_gt, axis = 1, keepdims = True)
-
-    # cell-specific normalized MSE
-    mses_scdisinfact.append(np.sum((X_scdisinfact_impute_norm - X_gt_norm) ** 2, axis = 1))
-    # cell-specific normalized MSE on diff genes
-    mses_diff_scdisinfact.append(np.sum((X_scdisinfact_impute_norm[:,:2*n_diff_genes] - X_gt_norm[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-specific pearson correlation
-    pearsons_scdisinfact.append(np.array([stats.pearsonr(X_scdisinfact_impute_norm[i,:], X_gt_norm[i,:])[0] for i in range(X_gt_norm.shape[0])]))
-    # cell-specific R2 score
-    r2_scdisinfact.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scdisinfact_impute_norm, X_gt_norm)]))
-    # cell-specific R2 diff score
-    r2_diff_scdisinfact.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scdisinfact_impute_norm[:,:2*n_diff_genes], X_gt_norm[:,:2*n_diff_genes])]))
-
-    # cell-specific normalized MSE
-    mses_scgen.append(np.sum((X_scgen_impute_norm - X_gt_norm) ** 2, axis = 1))
-    # cell-specific normalized MSE on diff genes
-    mses_diff_scgen.append(np.sum((X_scgen_impute_norm[:,:2*n_diff_genes] - X_gt_norm[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-specific pearson correlation
-    pearsons_scgen.append(np.array([stats.pearsonr(X_scgen_impute_norm[i,:], X_gt_norm[i,:])[0] for i in range(X_gt_norm.shape[0])]))
-    # cell-specific R2 score
-    r2_scgen.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scgen_impute_norm, X_gt_norm)]))
-    # cell-specific R2 diff score
-    r2_diff_scgen.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scgen_impute_norm[:,:2*n_diff_genes], X_gt_norm[:,:2*n_diff_genes])]))
-
-    # cell-specific normalized MSE
-    mses_scpregan.append(np.sum((X_scpregan_impute_norm - X_gt_norm) ** 2, axis = 1))
-    # cell-specific normalized MSE on diff genes
-    mses_diff_scpregan.append(np.sum((X_scpregan_impute_norm[:,:2*n_diff_genes] - X_gt_norm[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-specific pearson correlation
-    pearsons_scpregan.append(np.array([stats.pearsonr(X_scpregan_impute_norm[i,:], X_gt_norm[i,:])[0] for i in range(X_gt_norm.shape[0])]))
-    # cell-specific R2 score
-    r2_scpregan.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scpregan_impute_norm, X_gt_norm)]))
-    # cell-specific R2 diff score
-    r2_diff_scpregan.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scpregan_impute_norm[:,:2*n_diff_genes], X_gt_norm[:,:2*n_diff_genes])]))
-
-mses_scdisinfact = np.concatenate(mses_scdisinfact, axis = 0)
-mses_diff_scdisinfact = np.concatenate(mses_diff_scdisinfact, axis = 0)
-pearsons_scdisinfact = np.concatenate(pearsons_scdisinfact, axis = 0)
-r2_scdisinfact = np.concatenate(r2_scdisinfact, axis = 0)
-r2_diff_scdisinfact = np.concatenate(r2_diff_scdisinfact, axis = 0)
-
-mses_scgen = np.concatenate(mses_scgen, axis = 0)
-mses_diff_scgen = np.concatenate(mses_diff_scgen, axis = 0)
-pearsons_scgen = np.concatenate(pearsons_scgen, axis = 0)
-r2_scgen = np.concatenate(r2_scgen, axis = 0)
-r2_diff_scgen = np.concatenate(r2_diff_scgen, axis = 0)
-
-mses_scpregan = np.concatenate(mses_scpregan, axis = 0)
-mses_diff_scpregan = np.concatenate(mses_diff_scpregan, axis = 0)
-pearsons_scpregan = np.concatenate(pearsons_scpregan, axis = 0)
-r2_scpregan = np.concatenate(r2_scpregan, axis = 0)
-r2_diff_scpregan = np.concatenate(r2_diff_scpregan, axis = 0)
-
-scores_cell_specific = pd.DataFrame(columns = ["MSE (normalized)", "MSE diff (normalized)", "Pearson", "R2", "R2 diff", "Method"])
-scores_cell_specific["MSE (normalized)"] = np.concatenate((mses_scdisinfact, mses_scgen, mses_scpregan), axis = 0)
-scores_cell_specific["MSE diff (normalized)"] = np.concatenate((mses_diff_scdisinfact, mses_diff_scgen, mses_diff_scpregan), axis = 0)
-scores_cell_specific["Pearson"] = np.concatenate((pearsons_scdisinfact, pearsons_scgen, pearsons_scpregan), axis = 0)
-scores_cell_specific["R2"] = np.concatenate((r2_scdisinfact, r2_scgen, r2_scpregan), axis = 0)
-scores_cell_specific["R2 diff"] = np.concatenate((r2_diff_scdisinfact, r2_diff_scgen, r2_diff_scpregan), axis = 0)
-scores_cell_specific["Method"] = np.array(["scDisInFact"] * mses_scdisinfact.shape[0] + ["scGEN"] * mses_scgen.shape[0] + ["scPreGAN"] * mses_scpregan.shape[0])
-
-scores_cell_specific.to_csv(result_dir + "scores_cell_specific.csv")
-
-
-# plot violin plot
-fig = plt.figure(figsize = (23,5))
-ax = fig.subplots(nrows = 1, ncols = 5)
-sns.boxplot(data = scores_cell_specific, x = "Method", y = "MSE (normalized)", ax = ax[0])
-sns.boxplot(data = scores_cell_specific, x = "Method", y = "MSE diff (normalized)", ax = ax[1])
-sns.boxplot(data = scores_cell_specific, x = "Method", y = "Pearson", ax = ax[2])
-sns.boxplot(data = scores_cell_specific, x = "Method", y = "R2", ax = ax[3])
-sns.boxplot(data = scores_cell_specific, x = "Method", y = "R2 diff", ax = ax[4])
-plt.tight_layout()
-fig.savefig(result_dir + "mse.png", bbox_inches = "tight")
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims2_annos.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["condition 2"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_dims2_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+# utils.plot_latent(zs = z_ds_umap[1], annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_full["meta_cells"]]), batches = np.concatenate([x["batch"].values.squeeze() for x in data_dict_full["meta_cells"]]), \
+#     mode = "annos", axis_label = "UMAP", figsize = (12,7), save = (result_dir + comment+"diff_dims2_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 
 # In[]
-# -------------------------------------------------------------------------------
-#
-# cell-type-specific scores with ground truth
-#
-# -------------------------------------------------------------------------------
-# TODO: R^2 calculation
-mses_scdisinfact_celltype = []
-mses_diff_scdisinfact_celltype = []
-pearsons_scdisinfact_celltype = []
-r2_scdisinfact_celltype = []
-r2_diff_scdisinfact_celltype = []
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 1. All input matrices for training. use (ctrl, severe, batch 0) as the predict condition")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 
-mses_scgen_celltype = []
-mses_diff_scgen_celltype = []
-pearsons_scgen_celltype = []
-r2_scgen_celltype = []
-r2_diff_scgen_celltype = []
+# predict condition 1
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 0)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
 
-mses_scpregan_celltype = []
-mses_diff_scpregan_celltype = []
-pearsons_scpregan_celltype = []
-r2_scpregan_celltype = []
-r2_diff_scpregan_celltype = []
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-for i, batch_id in enumerate([2, 3, 4, 5]):
-    # load impute and ground truth matrices
-    X_scdisinfact_impute = X_scdisinfact_imputes[batch_id]
-    X_scgen_impute = X_scgen_imputes[i]
-    X_scpregan_impute = X_scpregan_imputes[i]
-    X_gt = counts_gt[batch_id]
-    label_anno = label_annos[batch_id]
-    
-    # normalize the counts
-    X_scdisinfact_impute_norm = X_scdisinfact_impute/np.sum(X_scdisinfact_impute, axis = 1, keepdims = True)
-    X_scgen_impute_norm = X_scgen_impute/np.sum(X_scgen_impute, axis = 1, keepdims = True)
-    X_scpregan_impute_norm = X_scpregan_impute/np.sum(X_scpregan_impute, axis = 1, keepdims = True)
-    X_gt_norm = X_gt/np.sum(X_gt, axis = 1, keepdims = True)
+# predict (stim, healthy, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
 
-    # calculate cell type averaged expressions
-    uniq_celltype = np.unique(label_anno)
-    X_scdisinfact_impute_mean = []
-    X_scgen_impute_mean = []
-    X_scpregan_impute_mean = []
-    X_gt_mean = []
-    for celltype in uniq_celltype:
-        X_scdisinfact_impute_mean.append(np.mean(X_scdisinfact_impute_norm[label_anno == celltype,:], axis = 0, keepdims = True))
-        X_scgen_impute_mean.append(np.mean(X_scgen_impute_norm[label_anno == celltype,:], axis = 0, keepdims = True))
-        X_scpregan_impute_mean.append(np.mean(X_scpregan_impute_norm[label_anno == celltype,:], axis = 0, keepdims = True))
-        X_gt_mean.append(np.mean(X_gt_norm[label_anno == celltype,:], axis = 0, keepdims = True))
-    X_scdisinfact_impute_mean = np.concatenate(X_scdisinfact_impute_mean, axis = 0)
-    X_scgen_impute_mean = np.concatenate(X_scgen_impute_mean, axis = 0)
-    X_scpregan_impute_mean = np.concatenate(X_scpregan_impute_mean, axis = 0)
-    X_gt_mean = np.concatenate(X_gt_mean, axis = 0)
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
 
-    # cell-type-specific normalized MSE
-    mses_scdisinfact_celltype.append(np.sum((X_scdisinfact_impute_mean - X_gt_mean) ** 2, axis = 1))
-    # cell-type-specific normalized MSE on diff genes
-    mses_diff_scdisinfact_celltype.append(np.sum((X_scdisinfact_impute_mean[:,:2*n_diff_genes] - X_gt_mean[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-type-specific pearson correlation
-    pearsons_scdisinfact_celltype.append(np.array([stats.pearsonr(X_scdisinfact_impute_mean[i,:], X_gt_mean[i,:])[0] for i in range(X_gt_mean.shape[0])]))
-    # cell-type-specific R2 score
-    r2_scdisinfact_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scdisinfact_impute_mean, X_gt_mean)]))
-    # cell-type-specific R2 score
-    r2_diff_scdisinfact_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scdisinfact_impute_mean[:,:2*n_diff_genes], X_gt_mean[:,:2*n_diff_genes])]))
-
-    # cell-type-specific normalized MSE
-    mses_scgen_celltype.append(np.sum((X_scgen_impute_mean - X_gt_mean) ** 2, axis = 1))
-    # cell-type-specific normalized MSE on diff genes
-    mses_diff_scgen_celltype.append(np.sum((X_scgen_impute_mean[:,:2*n_diff_genes] - X_gt_mean[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-type-specific pearson correlation
-    pearsons_scgen_celltype.append(np.array([stats.pearsonr(X_scgen_impute_mean[i,:], X_gt_mean[i,:])[0] for i in range(X_gt_mean.shape[0])]))
-    # cell-specific R2 score
-    r2_scgen_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scgen_impute_mean, X_gt_mean)]))
-    # cell-specific R2 diff score
-    r2_diff_scgen_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scgen_impute_mean[:,:2*n_diff_genes], X_gt_mean[:,:2*n_diff_genes])]))
-
-    # cell-type-specific normalized MSE
-    mses_scpregan_celltype.append(np.sum((X_scpregan_impute_mean - X_gt_mean) ** 2, axis = 1))
-    # cell-type-specific normalized MSE on diff genes
-    mses_diff_scpregan_celltype.append(np.sum((X_scpregan_impute_mean[:,:2*n_diff_genes] - X_gt_mean[:,:2*n_diff_genes]) ** 2, axis = 1))   
-    # cell-type-specific pearson correlation
-    pearsons_scpregan_celltype.append(np.array([stats.pearsonr(X_scpregan_impute_mean[i,:], X_gt_mean[i,:])[0] for i in range(X_gt_mean.shape[0])]))
-    # cell-specific R2 score
-    r2_scpregan_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scpregan_impute_mean, X_gt_mean)]))
-    # cell-specific R2 diff score
-    r2_diff_scpregan_celltype.append(np.array([r2_score(y_pred = x, y_true = y) for x, y in zip(X_scpregan_impute_mean[:,:2*n_diff_genes], X_gt_mean[:,:2*n_diff_genes])]))
-
-mses_scdisinfact_celltype = np.concatenate(mses_scdisinfact_celltype, axis = 0)
-mses_diff_scdisinfact_celltype = np.concatenate(mses_diff_scdisinfact_celltype, axis = 0)
-pearsons_scdisinfact_celltype = np.concatenate(pearsons_scdisinfact_celltype, axis = 0)
-r2_scdisinfact_celltype = np.concatenate(r2_scdisinfact_celltype, axis = 0)
-r2_diff_scdisinfact_celltype = np.concatenate(r2_diff_scdisinfact_celltype, axis = 0)
-
-mses_scgen_celltype = np.concatenate(mses_scgen_celltype, axis = 0)
-mses_diff_scgen_celltype = np.concatenate(mses_diff_scgen_celltype, axis = 0)
-pearsons_scgen_celltype = np.concatenate(pearsons_scgen_celltype, axis = 0)
-r2_scgen_celltype = np.concatenate(r2_scgen_celltype, axis = 0)
-r2_diff_scgen_celltype = np.concatenate(r2_diff_scgen_celltype, axis = 0)
-
-mses_scpregan_celltype = np.concatenate(mses_scpregan_celltype, axis = 0)
-mses_diff_scpregan_celltype = np.concatenate(mses_diff_scpregan_celltype, axis = 0)
-pearsons_scpregan_celltype = np.concatenate(pearsons_scpregan_celltype, axis = 0)
-r2_scpregan_celltype = np.concatenate(r2_scpregan_celltype, axis = 0)
-r2_diff_scpregan_celltype = np.concatenate(r2_diff_scpregan_celltype, axis = 0)
-
-scores_cluster_specific = pd.DataFrame(columns = ["MSE (normalized)", "MSE diff (normalized)", "Pearson", "R2", "R2 diff", "Method"])
-scores_cluster_specific["MSE (normalized)"] = np.concatenate((mses_scdisinfact_celltype, mses_scgen_celltype, mses_scpregan_celltype), axis = 0)
-scores_cluster_specific["MSE diff (normalized)"] = np.concatenate((mses_diff_scdisinfact_celltype, mses_diff_scgen_celltype, mses_diff_scpregan_celltype), axis = 0)
-scores_cluster_specific["Pearson"] = np.concatenate((pearsons_scdisinfact_celltype, pearsons_scgen_celltype, pearsons_scpregan_celltype), axis = 0)
-scores_cluster_specific["R2"] = np.concatenate((r2_scdisinfact_celltype, r2_scgen_celltype, r2_scpregan_celltype), axis = 0)
-scores_cluster_specific["R2 diff"] = np.concatenate((r2_diff_scdisinfact_celltype, r2_diff_scgen_celltype, r2_diff_scpregan_celltype), axis = 0)
-scores_cluster_specific["Method"] = np.array(["scDisInFact"] * mses_scdisinfact_celltype.shape[0] + ["scGEN"] * mses_scgen_celltype.shape[0] + ["scPreGAN"] * mses_scgen_celltype.shape[0])
-
-scores_cluster_specific.to_csv(result_dir + "scores_cluster_specific.csv")
-
-# plot violin plot
-fig = plt.figure(figsize = (23,5))
-ax = fig.subplots(nrows = 1, ncols = 5)
-sns.boxplot(data = scores_cluster_specific, x = "Method", y = "MSE (normalized)", ax = ax[0])
-sns.boxplot(data = scores_cluster_specific, x = "Method", y = "MSE diff (normalized)", ax = ax[1])
-sns.boxplot(data = scores_cluster_specific, x = "Method", y = "Pearson", ax = ax[2])
-sns.boxplot(data = scores_cluster_specific, x = "Method", y = "R2", ax = ax[3])
-sns.boxplot(data = scores_cluster_specific, x = "Method", y = "R2 diff", ax = ax[4])
-plt.tight_layout()
-fig.savefig(result_dir + "mse_cluster.png", bbox_inches = "tight")
-
-# In[] Calculate batch mixing score
-labels = np.concatenate(label_annos[2:], axis = 0)
-
-X_scdisinfact_impute = np.concatenate(X_scdisinfact_imputes[2:], axis = 0)
-# normalization
-X_scdisinfact_impute_norm = X_scdisinfact_impute/(np.sum(X_scdisinfact_impute, axis = 1, keepdims = True) + 1e-6) * 100
-X_scdisinfact_impute_norm = np.log1p(X_scdisinfact_impute_norm)
-x_pca_scdisinfact = PCA(n_components = 100).fit_transform(X_scdisinfact_impute_norm)
-
-X_scgen_impute = np.concatenate(X_scgen_imputes, axis = 0)
-# normalization
-X_scgen_impute_norm = X_scgen_impute/(np.sum(X_scgen_impute, axis = 1, keepdims = True) + 1e-6) * 100
-X_scgen_impute_norm = np.log1p(X_scgen_impute_norm)
-x_pca_scgen = PCA(n_components = 100).fit_transform(X_scgen_impute_norm)
-
-X_scpregan_impute = np.concatenate(X_scpregan_imputes, axis = 0)
-# normalization
-X_scpregan_impute_norm = X_scpregan_impute/(np.sum(X_scpregan_impute, axis = 1, keepdims = True) + 1e-6) * 100
-X_scpregan_impute_norm = np.log1p(X_scpregan_impute_norm)
-x_pca_scpregan = PCA(n_components = 100).fit_transform(X_scpregan_impute_norm)
-
-n_neighbors = 30
-# graph connectivity score, check the batch mixing of the imputated gene expression data
-gc_scdisinfact = bmk.graph_connectivity(X = x_pca_scdisinfact, groups = labels, k = n_neighbors)
-print('GC (scDisInFact): {:.3f}'.format(gc_scdisinfact))
-gc_scgen = bmk.graph_connectivity(X = x_pca_scgen, groups = labels, k = n_neighbors)
-print('GC (scGEN): {:.3f}'.format(gc_scgen))
-gc_scpregan = bmk.graph_connectivity(X = x_pca_scpregan, groups = labels, k = n_neighbors)
-print('GC (scPreGAN): {:.3f}'.format(gc_scpregan))
-
-# ARI score, check the separation of cell types? still needed?
-nmi_scdisinfact = []
-ari_scdisinfact = []
-for resolution in np.arange(0.1, 10, 0.5):
-    leiden_labels_scdisinfact = utils.leiden_cluster(X = x_pca_scdisinfact, knn_indices = None, knn_dists = None, resolution = resolution)
-    nmi_scdisinfact.append(bmk.nmi(group1 = labels, group2 = leiden_labels_scdisinfact))
-    ari_scdisinfact.append(bmk.ari(group1 = labels, group2 = leiden_labels_scdisinfact))
-print('NMI (scDisInFact): {:.3f}'.format(max(nmi_scdisinfact)))
-print('ARI (scDisInFact): {:.3f}'.format(max(ari_scdisinfact)))
-
-nmi_scgen = []
-ari_scgen = []
-for resolution in np.arange(0.1, 10, 0.5):
-    leiden_labels_scgen = utils.leiden_cluster(X = x_pca_scgen, knn_indices = None, knn_dists = None, resolution = resolution)
-    nmi_scgen.append(bmk.nmi(group1 = labels, group2 = leiden_labels_scgen))
-    ari_scgen.append(bmk.ari(group1 = labels, group2 = leiden_labels_scgen))
-print('NMI (scGEN): {:.3f}'.format(max(nmi_scgen)))
-print('ARI (scGEN): {:.3f}'.format(max(ari_scgen)))
-
-nmi_scpregan = []
-ari_scpregan = []
-for resolution in np.arange(0.1, 10, 0.5):
-    leiden_labels_scpregan = utils.leiden_cluster(X = x_pca_scpregan, knn_indices = None, knn_dists = None, resolution = resolution)
-    nmi_scpregan.append(bmk.nmi(group1 = labels, group2 = leiden_labels_scpregan))
-    ari_scpregan.append(bmk.ari(group1 = labels, group2 = leiden_labels_scpregan))
-print('NMI (scPreGAN): {:.3f}'.format(max(nmi_scpregan)))
-print('ARI (scPreGAN): {:.3f}'.format(max(ari_scpregan)))
-
-# scores
-scores = pd.DataFrame(columns = ["GC", "NMI", "ARI", "methods"])
-scores["NMI"] = np.array([np.max(nmi_scdisinfact), np.max(nmi_scgen), np.max(nmi_scpregan)])
-scores["ARI"] = np.array([np.max(ari_scdisinfact), np.max(ari_scgen), np.max(nmi_scpregan)])
-scores["methods"] = np.array(["scDisInFact", "scGEN", "scPreGAN"])
-scores["GC"] = np.array([gc_scdisinfact, gc_scgen, gc_scpregan])
-scores.to_csv(result_dir + comment + "batch_mixing_scdisinfact.csv")
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
 
 
-# In[] Visualize the impute matrix (scDisInFact)
-plt.rcParams["font.size"] = 10
-# NOTE: Impute, removed of both conditions and batch effect
 
-# z_ds_impute = np.concatenate(z_ds_impute, axis = 0)
-# z_ds_impute_umap = umap_op.fit_transform(z_ds_impute)
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
 
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
 
-# UMAP visualization
-pca_op = PCA(n_components = 30)
-umap_op = UMAP(min_dist = 0.4, random_state = 0, n_neighbors = 30)
-x_umap = umap_op.fit_transform(pca_op.fit_transform(X_scdisinfact_impute_norm))
-# z_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
 
-x_umaps = []
-# z_umaps = []
-# z_ds_impute_umaps = []
-for batch in range(4):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + X_scgen_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-        # z_umaps.append(z_umap[start_pointer:end_pointer,:])
-        # z_ds_impute_umaps.append(z_ds_impute_umap[start_pointer:end_pointer,:])
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-    elif batch == (4 - 1):
-        start_pointer = start_pointer + X_scgen_imputes[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
-        # z_umaps.append(z_umap[start_pointer:,:])
-        # z_ds_impute_umaps.append(z_ds_impute_umap[start_pointer:,:])
-
-    else:
-        start_pointer = start_pointer + X_scgen_imputes[batch - 1].shape[0]
-        end_pointer = start_pointer + X_scgen_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-        # z_umaps.append(z_umap[start_pointer:end_pointer,:])
-        # z_ds_impute_umaps.append(z_ds_impute_umap[start_pointer:end_pointer,:])
-
-# # NOTE: Full latent space, the latent space should mix between batches to make sure that the output of the decoder to be similar between batches
-# utils.plot_latent(zs = z_umaps, annos = label_annos, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_celltypes_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-# utils.plot_latent(zs = z_umaps, annos = label_annos, mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"latent_celltypes_sep_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-# utils.plot_latent(zs = z_umaps, annos = label_batches, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_batches_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
-# utils.plot_latent(zs = z_umaps, annos = label_conditions, mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"latent_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
-
-# # NOTE: visualize only the diff dimension, the diff dimension should mix between batches for correct prediction
-# utils.plot_latent(zs = z_ds_impute_umaps, annos = label_conditions, mode = "separate", axis_label = "UMAP", figsize = (5,13), save = None, markerscale = 6, s = 3)
-
-# NOTE: visualize the imputed results
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_celltypes_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"impute_celltypes_sep_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_batches[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_batches_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_conditions[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
+scores1 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores1["MSE"] = mses_scdisinfact
+scores1["MSE input"] = mses_input
+scores1["Pearson"] = pearsons_scdisinfact
+scores1["Pearson input"] = pearsons_input
+scores1["R2"] = r2_scdisinfact
+scores1["R2 input"] = r2_input
+scores1["Method"] = "scdisinfact"
+scores1["Prediction"] = "condition effect (condition 1)"
 
 
-# In[] Visualize the impute matrix (scGEN)
+# predict condition 2
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 0)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
 
-# UMAP visualization
-pca_op = PCA(n_components = 30)
-umap_op = UMAP(min_dist = 0.4, random_state = 0, n_neighbors = 30)
-x_umap = umap_op.fit_transform(pca_op.fit_transform(X_scgen_impute_norm))
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-x_umaps = []
-for batch in range(4):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + X_scgen_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
 
-    elif batch == (4 - 1):
-        start_pointer = start_pointer + X_scgen_imputes[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
 
-    else:
-        start_pointer = start_pointer + X_scgen_imputes[batch - 1].shape[0]
-        end_pointer = start_pointer + X_scgen_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
 
-comment = "scGEN_scenario1/"
-# NOTE: visualize the imputed results
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_celltypes_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"impute_celltypes_sep_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_batches[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_batches_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_conditions[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
 
-# In[] Visualize the impute matrix (scPreGAN)
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
 
-# UMAP visualization
-pca_op = PCA(n_components = 30)
-umap_op = UMAP(min_dist = 0.4, random_state = 0, n_neighbors = 30)
-x_umap = umap_op.fit_transform(pca_op.fit_transform(X_scpregan_impute_norm))
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
 
-x_umaps = []
-for batch in range(4):
-    if batch == 0:
-        start_pointer = 0
-        end_pointer = start_pointer + X_scpregan_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-    elif batch == (4 - 1):
-        start_pointer = start_pointer + X_scpregan_imputes[batch - 1].shape[0]
-        x_umaps.append(x_umap[start_pointer:,:])
-
-    else:
-        start_pointer = start_pointer + X_scpregan_imputes[batch - 1].shape[0]
-        end_pointer = start_pointer + X_scpregan_imputes[batch].shape[0]
-        x_umaps.append(x_umap[start_pointer:end_pointer,:])
-
-comment = "scPreGAN_scenario1/"
-# NOTE: visualize the imputed results
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_celltypes_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_annos[2:], mode = "separate", axis_label = "UMAP", figsize = (10,20), save = result_dir + comment+"impute_celltypes_sep_ctrl.png" if result_dir else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_batches[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_batches_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_umaps, annos = label_conditions[2:], mode = "joint", axis_label = "UMAP", figsize = (10,5), save = result_dir + comment+"impute_condition_ctrl.png" if result_dir else None, markerscale = 6, s = 5)
+scores2 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores2["MSE"] = mses_scdisinfact
+scores2["MSE input"] = mses_input
+scores2["Pearson"] = pearsons_scdisinfact
+scores2["Pearson input"] = pearsons_input
+scores2["R2"] = r2_scdisinfact
+scores2["R2 input"] = r2_input
+scores2["Method"] = "scdisinfact"
+scores2["Prediction"] = "condition effect (condition 2)"
 
 # In[]
-if True:
-    # TODO: batch mixing (for batch 1, 2 there is no reference in scGEN)
-    plt.rcParams["font.size"] = 20
-    scores_cell = pd.DataFrame(columns = ["MSE (normalized)", "MSE diff (normalized)", "Pearson", "R2", "R2 diff", "Method"])
-    scores_cluster = pd.DataFrame(columns = ["MSE (normalized)", "MSE diff (normalized)", "Pearson", "R2", "R2 diff", "Method"]) 
-    status = []
-    noise_levels = []
-    ndiff_genes = []
-    ndiffs = []
-    result_dir = "./simulated/prediction/"
-    # for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.3_20_2", "0.3_50_2", "0.3_100_2", "0.4_20_2", "0.4_50_2", "0.4_100_2","0.2_20_4", "0.2_20_8", "0.3_20_4", "0.3_20_8", "0.4_20_4", "0.4_20_8"]:
-    for dataset in ["0.2_20_2", "0.2_50_2", "0.2_100_2", "0.2_20_4", "0.2_50_4", "0.2_100_4", "0.2_20_8", "0.2_50_8", "0.2_100_8"]:
-        noise_level, ndiff_gene, ndiff = dataset.split("_")
+# predict condition 1
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 1)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
 
-        # cell-level    
-        score_cell = pd.read_csv(result_dir + "1condition_10000_500_" + dataset + "/scores_cell_specific.csv", index_col = 0)
-        scores_cell = pd.concat((scores_cell, score_cell), axis = 0)
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-        # cluster-level
-        score_cluster = pd.read_csv(result_dir + "1condition_10000_500_" + dataset + "/scores_cluster_specific.csv", index_col = 0)
-        scores_cluster = pd.concat((scores_cluster, score_cluster), axis = 0)
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
 
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
 
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
 
-    fig = plt.figure(figsize = (22,6))
-    ax = fig.subplots(nrows = 1, ncols = 4)
-    sns.boxplot(data = scores_cell, x = "Method", y = "MSE (normalized)", ax = ax[0])
-    sns.boxplot(data = scores_cell, x = "Method", y = "MSE diff (normalized)", ax = ax[1])
-    # sns.boxplot(data = scores_cell, x = "Method", y = "Pearson", ax = ax[2])
-    sns.boxplot(data = scores_cell, x = "Method", y = "R2", ax = ax[2])
-    sns.boxplot(data = scores_cell, x = "Method", y = "R2 diff", ax = ax[3])
-    ax[0].set_ylabel("MSE")
-    ax[1].set_ylabel("MSE-diff") 
-    ax[2].set_ylabel("$R^2$")
-    ax[3].set_ylabel("$R^2$-diff") 
-    ax[0].set_xlabel(None)
-    ax[1].set_xlabel(None)
-    ax[2].set_xlabel(None)
-    ax[3].set_xlabel(None)
-    ax[0].set_ylim(0, 0.08)
-    ax[1].set_ylim(0, 0.08)
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
 
-    ax[0].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[1].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[2].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[3].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    plt.suptitle("Cell-specific scores")
-    plt.tight_layout()
-    fig.savefig(result_dir + "scores_cell.png", bbox_inches = "tight")
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
 
-    fig = plt.figure(figsize = (22,6))
-    ax = fig.subplots(nrows = 1, ncols = 4)
-    sns.boxplot(data = scores_cluster, x = "Method", y = "MSE (normalized)", ax = ax[0])
-    sns.boxplot(data = scores_cluster, x = "Method", y = "MSE diff (normalized)", ax = ax[1])
-    # sns.boxplot(data = scores_cluster, x = "Method", y = "Pearson", ax = ax[2])
-    sns.boxplot(data = scores_cluster, x = "Method", y = "R2", ax = ax[2])
-    sns.boxplot(data = scores_cluster, x = "Method", y = "R2 diff", ax = ax[3])
-    ax[0].set_ylabel("MSE")
-    ax[1].set_ylabel("MSE-diff") 
-    ax[2].set_ylabel("$R^2$")
-    ax[3].set_ylabel("$R^2$-diff") 
-    ax[0].set_xlabel(None)
-    ax[1].set_xlabel(None)
-    ax[2].set_xlabel(None)
-    ax[3].set_xlabel(None)
-    ax[0].set_ylim(0, 0.08)
-    ax[1].set_ylim(0, 0.08)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
 
-    ax[0].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[1].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[2].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    ax[3].set_xticklabels(["scDisInFact", "scGEN", "scPreGAN"], rotation = 0)
-    plt.suptitle("Cell-type-specific scores")
-    plt.tight_layout()
-    fig.savefig(result_dir + "scores_cluster.png", bbox_inches = "tight")
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-
-
-# In[] Test prediction accuracy, old for reference
-'''
-plt.rcParams["font.size"] = 15
-# one forward pass
-z_cs = []
-z_ds = []
-zs = []
-# one forward pass
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets):
-        # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_stand.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True, eval_model = True)
-        # pass through the decoder
-        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-        z_c = dict_inf["mu_c"]
-        z_d = dict_inf["mu_d"]
-        z = torch.cat([z_c] + z_d, dim = 1)
-        mu = dict_gen["mu"]
-        z_cs.append(z_c.cpu().detach().numpy())
-        zs.append(z.cpu().detach().numpy())
-        z_ds.append([x.cpu().detach().numpy() for x in z_d])   
+scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores3["MSE"] = mses_scdisinfact
+scores3["MSE input"] = mses_input
+scores3["Pearson"] = pearsons_scdisinfact
+scores3["Pearson input"] = pearsons_input
+scores3["R2"] = r2_scdisinfact
+scores3["R2 input"] = r2_input
+scores3["Method"] = "scdisinfact"
+scores3["Prediction"] = "condition effect (condition 1) + batch effect"
 
 
-# NOTE: impute control for batches 3, 4, 5, 6, only removed of conditions
+# predict condition 2
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 1)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
 
-# control, batch 0 and 1
-mean_ctrl = np.mean(np.concatenate([x[0] for x in z_ds[0:2]], axis = 0), axis = 0)[None,:]
-# stim1, batch 2 and 3
-mean_stim1 = np.mean(np.concatenate([x[0] for x in z_ds[2:4]], axis = 0), axis = 0)[None,:]
-# stim2, batch 4 and 5
-mean_stim2 = np.mean(np.concatenate([x[0] for x in z_ds[4:]], axis = 0), axis = 0)[None,:]
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-z_ds_ctrl = np.concatenate([x[0] for x in z_ds[0:2]], axis = 0)
-# find the clostest
-# mean_ctrl = z_ds_ctrl[[np.argmin(np.sum((z_ds_ctrl - mean_ctrl) ** 2, axis = 1))], :]
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
 
-change_stim1_ctrl = mean_ctrl - mean_stim1
-change_stim2_ctrl = mean_ctrl - mean_stim2
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
 
-mse = []
-pearson = []
-mse_diff = []
-mse_ratio = []
-pearson_ratio = []
-mse_ratio_diff = []
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
 
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores4["MSE"] = mses_scdisinfact
+scores4["MSE input"] = mses_input
+scores4["Pearson"] = pearsons_scdisinfact
+scores4["Pearson input"] = pearsons_input
+scores4["R2"] = r2_scdisinfact
+scores4["R2 input"] = r2_input
+scores4["Method"] = "scdisinfact"
+scores4["Prediction"] = "condition effect (condition 2) + batch effect"
+
+scores = pd.concat([scores1, scores2, scores3, scores4], axis = 0)
+scores.to_csv(result_dir + "scores_full.csv")
+
+
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 1. Remove the predicted condition (useen condition). use (ctrl, severe, batch 0) as the predict condition")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_gt = []
+counts_ctrl_healthy = []
+counts_ctrl_severe = []
+counts_stim_healthy = []
+counts_stim_severe = []
+# cell types
+label_annos = []
+
+for batch_id in range(n_batches):
+    counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_healthy.txt', sep = "\t", header = None).values.T)
+    counts_ctrl_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_severe.txt', sep = "\t", header = None).values.T)
+    counts_stim_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_healthy.txt', sep = "\t", header = None).values.T)
+    counts_stim_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_severe.txt', sep = "\t", header = None).values.T)
+
+    anno = pd.read_csv(data_dir + f'cell_label{batch_id + 1}.txt', sep = "\t", index_col = 0).values.squeeze()
+    # annotation labels
+    label_annos.append(np.array([('cell type '+str(i)) for i in anno]))  
+
+# NOTE: select counts for each batch
 np.random.seed(0)
-with torch.no_grad():
-    for batch_id, dataset in enumerate(datasets):
-        #-------------------------------------------------------------------------------------------------------------------
-        #
-        # Remove both batch effect and condition effect (Imputation of count matrices under the control condition)
-        #
-        #-------------------------------------------------------------------------------------------------------------------
+counts_gt_test = []
+counts_test = []
+meta_cells = []
+# worst case: missing=4, one matrix for each condition
+missing = 1
+for batch_id in range(n_batches):
+    # generate permutation
+    permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
+    # since there are totally four combinations of conditions, separate the cells into four groups
+    chuck_size = int(counts_gt[batch_id].shape[0]/4)
+
+    if missing == 1:
+        if batch_id == 0:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+            # remove (ctrl, severe, batch 0)
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+            meta_cells.append(meta_cell)
+            
+        else:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+           
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = label_annos[batch_id][permute_idx]
+            meta_cells.append(meta_cell)
+    
+    elif missing == 2:
+        if batch_id == 0:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+            # remove (ctrl, severe, batch 0)
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+            meta_cells.append(meta_cell)
+            
+        else:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+           
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+            meta_cells.append(meta_cell)    
+
+    elif missing == 3:
+        if batch_id == 0:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
+            # remove (ctrl, severe, batch 0)
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
+
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size)
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size)
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]]], axis = 0)
+            meta_cells.append(meta_cell)
+            
+        else:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+           
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+            meta_cells.append(meta_cell) 
+
+
+    elif missing == 4:
+        if batch_id == 0:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
+            # remove (ctrl, severe, batch 0)
+            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
+
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size)
+            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size)
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]]], axis = 0)
+            meta_cells.append(meta_cell)
+            
+        else:
+            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+
+            counts_test.append(np.concatenate([counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
+                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+           
+            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["condition 2"] = np.array(["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+            meta_cells.append(meta_cell) 
+
+data_dict = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
+
+model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
+                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+
+# train_joint is more efficient, but does not work as well compared to train
+model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_-{missing}.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_-{missing}.pth", map_location = device))
+_ = model.eval()
+
+# In[]
+# predict condition 1
+counts_input = []
+meta_input = []
+# input (stim, severe, batch 0)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# predict (ctrl, severe, batch 0), note that the condition is not included in the training data.
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores1 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores1["MSE"] = mses_scdisinfact
+scores1["MSE input"] = mses_input
+scores1["Pearson"] = pearsons_scdisinfact
+scores1["Pearson input"] = pearsons_input
+scores1["R2"] = r2_scdisinfact
+scores1["R2 input"] = r2_input
+scores1["Method"] = "scdisinfact"
+scores1["Prediction"] = "condition effect (condition 1)"
+
+# predict condition 2
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 0)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores2 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores2["MSE"] = mses_scdisinfact
+scores2["MSE input"] = mses_input
+scores2["Pearson"] = pearsons_scdisinfact
+scores2["Pearson input"] = pearsons_input
+scores2["R2"] = r2_scdisinfact
+scores2["R2 input"] = r2_input
+scores2["Method"] = "scdisinfact"
+scores2["Prediction"] = "condition effect (condition 2)"
+
+
+# In[]
+# predict condition 1
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 1)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# predict (stim, healthy, batch 1)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores3["MSE"] = mses_scdisinfact
+scores3["MSE input"] = mses_input
+scores3["Pearson"] = pearsons_scdisinfact
+scores3["Pearson input"] = pearsons_input
+scores3["R2"] = r2_scdisinfact
+scores3["R2 input"] = r2_input
+scores3["Method"] = "scdisinfact"
+scores3["Prediction"] = "condition effect (condition 1) + batch effect"
+
+
+# predict condition 2
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 1)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores4["MSE"] = mses_scdisinfact
+scores4["MSE input"] = mses_input
+scores4["Pearson"] = pearsons_scdisinfact
+scores4["Pearson input"] = pearsons_input
+scores4["R2"] = r2_scdisinfact
+scores4["R2 input"] = r2_input
+scores4["Method"] = "scdisinfact"
+scores4["Prediction"] = "condition effect (condition 2) + batch effect"
+
+scores = pd.concat([scores1, scores2, scores3, scores4], axis = 0)
+scores.to_csv(result_dir + f"scores_missing{missing}.csv")
+
+# In[]
+scores_full = pd.read_csv(result_dir + "scores_full.csv", index_col = 0)
+scores_missing1 = pd.read_csv(result_dir + "scores_missing1.csv", index_col = 0)
+scores_missing2 = pd.read_csv(result_dir + "scores_missing2.csv", index_col = 0)
+scores_missing3 = pd.read_csv(result_dir + "scores_missing3.csv", index_col = 0)
+scores_missing4 = pd.read_csv(result_dir + "scores_missing4.csv", index_col = 0)
+
+scores_full["training"] = "full"
+scores_missing1["training"] = "missing 1"
+scores_missing2["training"] = "missing 2"
+scores_missing3["training"] = "missing 3"
+scores_missing4["training"] = "missing 4"
+scores = pd.concat([scores_full, scores_missing1, scores_missing2, scores_missing3, scores_missing4], axis = 0)
+
+scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
+scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
+scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
+scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
+
+scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
+scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
+scores["R2 (ratio)"] = scores["R2"].values/scores["R2 input"]
+
+# In[]
+import seaborn as sns
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (34,5))
+ax = fig.subplots(nrows = 1, ncols = 6)
+sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "MSE", ax = ax[0])
+sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "Pearson", ax = ax[1])
+sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "R2", ax = ax[2])
+
+graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "MSE (ratio)", ax = ax[3])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "Pearson (ratio)", ax = ax[4])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "R2 (ratio)", ax = ax[5])
+graph.axhline(1, ls = "--")
+fig.tight_layout()
+
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
+
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+ax[2].get_legend().remove()
+ax[3].get_legend().remove()
+ax[4].get_legend().remove()
+ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[3].set_xlabel(None)
+ax[3].set_yscale("log")
+ax[4].set_xlabel(None)
+ax[5].set_xlabel(None)
+
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+
+fig.savefig(result_dir + "scores.png", bbox_inches = "tight")
+
+# In[]
+# -------------------------------------------------------------------------------------------------
+#
+# Test 1
+#
+# -------------------------------------------------------------------------------------------------
+scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction", "training", "MSE (ratio)", "Pearson (ratio)", "R2 (ratio)"])
+for n_diff_genes in [20, 50, 100]:
+    for diff in [2, 4, 8]:
+        scdisinfact_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+        scores_full = pd.read_csv(scdisinfact_dir + "scores_full.csv", index_col = 0)
+        scores_missing1 = pd.read_csv(scdisinfact_dir + "scores_missing1.csv", index_col = 0)
+        scores_full["training"] = "full"
+        scores_missing1["training"] = "missing 1"
         
-        # removed of batch effect
-        ref_batch = 0.0
-        # still use the original batch_id as input, not change the latent embedding
-        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-        if batch_id in [0,1]:
-            z_d = []
-            for Enc_d in model.Enc_ds:
-                # still use the original batch_id as input, not change the latent embedding
-                _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-                z_d.append(_z_d)        
+        scgen_dir = f"./results_simulated/scgen/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+        scores_scgen_full = pd.read_csv(scgen_dir + "scores_full.csv", index_col = 0)
+        scores_scgen_missing1 = pd.read_csv(scgen_dir + "scores_missing1.csv", index_col = 0)
+        scores_scgen_full["training"] = "full"
+        scores_scgen_missing1["training"] = "missing 1"
 
-        elif batch_id in [2,3,4,5]:
-            # NOTE: removed of condition effect
-            # manner one, use mean
-            # z_d = [torch.tensor(mean_ctrl, device = model.device).expand(dataset.counts_stand.shape[0], Ks[1])]
-            
-            # manner two, random sample, better than mean
-            # idx = np.random.choice(z_ds_ctrl.shape[0], z_c.shape[0], replace = True)
-            # z_d = [torch.tensor(z_ds_ctrl[idx,:], device = model.device)]
-            
-            # manner three, latent space arithmetics
-            if batch_id in [2,3]:
-                z_d = z_ds[batch_id][0] + change_stim1_ctrl
-            else:
-                z_d = z_ds[batch_id][0] + change_stim2_ctrl 
-            z_d = [torch.tensor(z_d, device = model.device)]
+        scpregan_dir = f"./results_simulated/scpregan/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
+        scores_scpregan_full = pd.read_csv(scpregan_dir + "scores_full.csv", index_col = 0)
+        scores_scpregan_missing1 = pd.read_csv(scpregan_dir + "scores_missing1.csv", index_col = 0)
+        scores_scpregan_full["training"] = "full"
+        scores_scpregan_missing1["training"] = "missing 1"
+        scores_scpregan_full["Method"] = "scPreGAN"
+        scores_scpregan_missing1["Method"] = "scPreGAN"
 
-        # NOTE: change the batch_id into ref batch as input, change the diff condition into control
-        mu_impute, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
+        scores = pd.concat([scores_full, scores_missing1, scores_scgen_full, scores_scgen_missing1, 
+                            scores_scpregan_full, scores_scpregan_missing1], axis = 0)
 
-        mu_impute = mu_impute.cpu().detach().numpy() 
-        # NOTE: mu is normalized of library size
-        mu_impute_norm = mu_impute/np.sum(mu_impute, axis = 1, keepdims = True)
+        scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
 
-        #-------------------------------------------------------------------------------------------------------------------
-        #
-        # Not remove either batch effect or condition effect (only denoise the count matrix) 
-        #
-        #-------------------------------------------------------------------------------------------------------------------
-        # still use the original batch_id as input, not change the latent embedding
-        z_c, _ = model.Enc_c(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-        z_d = []
-        for Enc_d in model.Enc_ds:
-            # still use the original batch_id as input, not change the latent embedding
-            _z_d, _ = Enc_d(dataset.counts_stand.to(model.device), dataset.batch_id[:,None].to(model.device))
-            z_d.append(_z_d)        
-            
-        # NOTE: change the batch_id into ref batch as input, only remove the batch effect but keep the condition effect
-        # mu, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), torch.tensor([ref_batch] * dataset.counts_stand.shape[0], device = model.device)[:,None])
-        mu, _, _ = model.Dec(torch.concat([z_c] + z_d, dim = 1), dataset.batch_id[:,None].to(model.device))
-        mu = mu.cpu().detach().numpy() 
-        # NOTE: mu is normalized of library size
-        mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
+        scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
+        scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
+        scores["R2 (ratio)"] = scores["R2"].values/scores["R2 input"]
 
-        # change mu to input
-        mu = dataset.counts.numpy()
-        mu_norm = mu/np.sum(mu, axis = 1, keepdims = True)
+        scores_all = pd.concat([scores_all, scores], axis = 0)
 
-        #-------------------------------------------------------------------------------------------------------------------
-        #
-        # TODO: challenge: remove only batch effect and keep the condition effect, then compared the mse with remove both batch effect and condition effect
-        # Requires the accurate disentangling of both parts (condition and batch effect). 
-        # (Alternative: remove only condition effect but keep batch effect, then compare) 
-        #
-        #-------------------------------------------------------------------------------------------------------------------
+scores_full = scores_all[scores_all["training"] == "full"]
+scores_missing1 = scores_all[scores_all["training"] == "missing 1"]
+# In[]
+import seaborn as sns
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (34,5))
+ax = fig.subplots(nrows = 1, ncols = 6)
+sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
+sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
+sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
 
-        # input count matrix
-        # mu_obs = dataset.counts.cpu().detach().numpy()
-        # mu_norm = mu_obs/np.sum(mu_obs, axis = 1, keepdims = True)
+graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
+graph.axhline(1, ls = "--")
 
-        # ground truth: real count
-        mu_gt = counts_gt[batch_id]
-        mu_gt_norm = mu_gt/np.sum(counts_gt[batch_id], axis = 1, keepdims = True)
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
 
-        # mse is calculated by averaging over cells
-        mse.append(np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1)))
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+ax[2].get_legend().remove()
+ax[3].get_legend().remove()
+ax[4].get_legend().remove()
+ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
 
-        # pearson is calculated by averaging over cells
-        pearson.append(np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])])))
-        mse_diff.append(np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1)))
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[3].set_xlabel(None)
+ax[0].set_yscale("log")
+ax[3].set_yscale("log")
+ax[4].set_xlabel(None)
+ax[5].set_xlabel(None)
 
-        mse_ratio.append(
-            np.mean(np.sum((mu_gt_norm - mu_impute_norm) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm - mu_norm) ** 2, axis = 1))
-        )
+fig.tight_layout()
+# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+fig.savefig("results_simulated/prediction/scores_is.png", bbox_inches = "tight")
 
-        pearson_ratio.append(
-            np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_impute_norm[i,:])[0] for i in range(mu_impute_norm.shape[0])]))/np.mean(np.array([stats.pearsonr(mu_gt_norm[i,:], mu_norm[i,:])[0] for i in range(mu_norm.shape[0])]))
-        )
+fig = plt.figure(figsize = (34,5))
+ax = fig.subplots(nrows = 1, ncols = 6)
+sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
+sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
+sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
 
-        mse_ratio_diff.append(
-            np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_impute_norm[:,:2*n_diff_genes]) ** 2, axis = 1))/np.mean(np.sum((mu_gt_norm[:,:2*n_diff_genes] - mu_norm[:,:2*n_diff_genes]) ** 2, axis = 1))
-        )
+graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
+graph.axhline(1, ls = "--")
 
-        # plot the correlationship
-        fig = plt.figure(figsize = (14, 14))
-        ax = fig.subplots(nrows = 2, ncols = 2)
-        ax[0,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_impute_norm[:,20:].reshape(-1), s = 3)
-        ax[0,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3, c = "r")
-        ax[0,0].plot([0,1], [0,1], c = "k")
-        ax[0,0].set_xlim(xmin = 0, xmax = 1)
-        ax[0,0].set_ylim(ymin = 0, ymax = 1)
-        ax[0,0].set_xlabel("True count")
-        ax[0,0].set_ylabel("Impute count")
-        ax[0,0].set_title(f"Impute batch {batch_id}")
 
-        ax[0,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_impute_norm[:,:20].reshape(-1), s = 3)
-        ax[0,1].plot([0,1], [0,1], c = "k")
-        ax[0,1].set_xlim(xmin = 0, xmax = 0.1)
-        ax[0,1].set_ylim(ymin = 0, ymax = 0.1)
-        ax[0,1].set_xlabel("True count")
-        ax[0,1].set_ylabel("Impute count")
-        ax[0,1].set_title(f"Impute batch {batch_id} (diff genes)")
-        fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
 
-        ax[1,0].scatter(mu_gt_norm[:,20:].reshape(-1), mu_norm[:,20:].reshape(-1), s = 3)
-        ax[1,0].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3, c = "r")
-        ax[1,0].plot([0,1], [0,1], c = "k")
-        ax[1,0].set_xlim(xmin = 0, xmax = 1)
-        ax[1,0].set_ylim(ymin = 0, ymax = 1)
-        ax[1,0].set_xlabel("True count")
-        ax[1,0].set_ylabel("Observed count")
-        ax[1,0].set_title(f"Denoised batch {batch_id}")
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+ax[2].get_legend().remove()
+ax[3].get_legend().remove()
+ax[4].get_legend().remove()
+ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
 
-        ax[1,1].scatter(mu_gt_norm[:,:20].reshape(-1), mu_norm[:,:20].reshape(-1), s = 3)
-        ax[1,1].plot([0,1], [0,1], c = "k")
-        ax[1,1].set_xlim(xmin = 0, xmax = 0.1)
-        ax[1,1].set_ylim(ymin = 0, ymax = 0.1)
-        ax[1,1].set_xlabel("True count")
-        ax[1,1].set_ylabel("Observed count")
-        ax[1,1].set_title(f"Denoised batch {batch_id} (diff genes)")
-        fig.savefig(result_dir + comment + f"corr_batch_{batch_id}.png", bbox_inches = "tight")
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[3].set_xlabel(None)
+ax[0].set_yscale("log")
+ax[3].set_yscale("log")
+ax[4].set_xlabel(None)
+ax[5].set_xlabel(None)
+fig.tight_layout()
+# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+fig.savefig("results_simulated/prediction/scores_oos.png", bbox_inches = "tight")
 
-# print(mse_ratio)
-# print(pearson_ratio)
-# print(mse_ratio_diff)
-np.savetxt(result_dir + comment + "mse.txt", np.array(mse))
-np.savetxt(result_dir + comment + "mse_diff.txt", np.array(mse_diff))
-np.savetxt(result_dir + comment + "pearson.txt", np.array(pearson))
+# In[]
+# -------------------------------------------------------------------------------------------------
+#
+# Test 2
+#
+# -------------------------------------------------------------------------------------------------
+scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction", "training", "MSE (ratio)", "Pearson (ratio)", "R2 (ratio)"])
+for n_diff_genes in [20, 50, 100]:
+    for diff in [2, 4, 8]:
+        result_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
-np.savetxt(result_dir + comment + "mse_ratio.txt", np.array(mse_ratio))
-np.savetxt(result_dir + comment + "mse_ratio_diff.txt", np.array(mse_ratio_diff))
-np.savetxt(result_dir + comment + "pearson_ratio.txt", np.array(pearson_ratio))
-'''
+        scores_full = pd.read_csv(result_dir + "scores_full.csv", index_col = 0)
+        scores_missing1 = pd.read_csv(result_dir + "scores_missing1.csv", index_col = 0)
+        scores_missing2 = pd.read_csv(result_dir + "scores_missing2.csv", index_col = 0)
+        scores_missing3 = pd.read_csv(result_dir + "scores_missing3.csv", index_col = 0)
+        scores_missing4 = pd.read_csv(result_dir + "scores_missing4.csv", index_col = 0)
+
+        scores_full["training"] = "full"
+        scores_missing1["training"] = "remove 1"
+        scores_missing2["training"] = "remove 2"
+        scores_missing3["training"] = "remove 3"
+        scores_missing4["training"] = "remove 4"
+        scores = pd.concat([scores_full, scores_missing1, scores_missing2, scores_missing3, scores_missing4], axis = 0)
+
+        scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
+        scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
+
+        scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
+        scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
+        scores["R2 (ratio)"] = scores["R2"].values/scores["R2 input"]
+
+        scores_all = pd.concat([scores_all, scores], axis = 0)
+
+# In[]
+import seaborn as sns
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (5,20))
+ax = fig.subplots(nrows = 6, ncols = 1)
+scores_all = scores_all[scores_all["Prediction"] == "Condition 1\n(w/ batch effect)"]
+
+# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "MSE", ax = ax[0])
+# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "Pearson", ax = ax[1])
+# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "R2", ax = ax[2])
+
+# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "MSE (ratio)", ax = ax[3])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "Pearson (ratio)", ax = ax[4])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "R2 (ratio)", ax = ax[5])
+# graph.axhline(1, ls = "--")
+# fig.tight_layout()
+
+sns.boxplot(data = scores_all, x = "training", y = "MSE", ax = ax[0])
+sns.boxplot(data = scores_all, x = "training", y = "Pearson", ax = ax[1])
+sns.boxplot(data = scores_all, x = "training", y = "R2", ax = ax[2])
+
+graph = sns.boxplot(data = scores_all, x = "training", y = "MSE (ratio)", ax = ax[3])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_all, x = "training", y = "Pearson (ratio)", ax = ax[4])
+graph.axhline(1, ls = "--")
+graph = sns.boxplot(data = scores_all, x = "training", y = "R2 (ratio)", ax = ax[5])
+graph.axhline(1, ls = "--")
+
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
+
+# ax[0].get_legend().remove()
+# ax[1].get_legend().remove()
+# ax[2].get_legend().remove()
+# ax[3].get_legend().remove()
+# ax[4].get_legend().remove()
+# ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[3].set_xlabel(None)
+ax[0].set_yscale("log")
+ax[3].set_yscale("log")
+ax[4].set_xlabel(None)
+ax[5].set_xlabel(None)
+
+fig.tight_layout()
+
+# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+
+fig.savefig("results_simulated/prediction/scores_missing.png", bbox_inches = "tight")
 # %%

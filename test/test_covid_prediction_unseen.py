@@ -43,6 +43,122 @@ def show_values(axs, orient="v", space=.01):
     else:
         _single(axs)
 
+
+#-------------------------------------------------------------------------------------------
+#
+# statsmodel
+#
+#-------------------------------------------------------------------------------------------
+def _ecdf(x):
+    '''no frills empirical cdf used in fdrcorrection
+    '''
+    nobs = len(x)
+    return np.arange(1,nobs+1)/float(nobs)
+
+def fdrcorrection(pvals, alpha=0.05, method='indep', is_sorted=False):
+    '''
+    pvalue correction for false discovery rate.
+
+    This covers Benjamini/Hochberg for independent or positively correlated and
+    Benjamini/Yekutieli for general or negatively correlated tests.
+
+    Parameters
+    ----------
+    pvals : array_like, 1d
+        Set of p-values of the individual tests.
+    alpha : float, optional
+        Family-wise error rate. Defaults to ``0.05``.
+    method : {'i', 'indep', 'p', 'poscorr', 'n', 'negcorr'}, optional
+        Which method to use for FDR correction.
+        ``{'i', 'indep', 'p', 'poscorr'}`` all refer to ``fdr_bh``
+        (Benjamini/Hochberg for independent or positively
+        correlated tests). ``{'n', 'negcorr'}`` both refer to ``fdr_by``
+        (Benjamini/Yekutieli for general or negatively correlated tests).
+        Defaults to ``'indep'``.
+    is_sorted : bool, optional
+        If False (default), the p_values will be sorted, but the corrected
+        pvalues are in the original order. If True, then it assumed that the
+        pvalues are already sorted in ascending order.
+
+    Returns
+    -------
+    rejected : ndarray, bool
+        True if a hypothesis is rejected, False if not
+    pvalue-corrected : ndarray
+        pvalues adjusted for multiple hypothesis testing to limit FDR
+
+    Notes
+    -----
+    If there is prior information on the fraction of true hypothesis, then alpha
+    should be set to ``alpha * m/m_0`` where m is the number of tests,
+    given by the p-values, and m_0 is an estimate of the true hypothesis.
+    (see Benjamini, Krieger and Yekuteli)
+
+    The two-step method of Benjamini, Krieger and Yekutiel that estimates the number
+    of false hypotheses will be available (soon).
+
+    Both methods exposed via this function (Benjamini/Hochberg, Benjamini/Yekutieli)
+    are also available in the function ``multipletests``, as ``method="fdr_bh"`` and
+    ``method="fdr_by"``, respectively.
+
+    See also
+    --------
+    multipletests
+
+    '''
+    pvals = np.asarray(pvals)
+    assert pvals.ndim == 1, "pvals must be 1-dimensional, that is of shape (n,)"
+
+    if not is_sorted:
+        pvals_sortind = np.argsort(pvals)
+        pvals_sorted = np.take(pvals, pvals_sortind)
+    else:
+        pvals_sorted = pvals  # alias
+
+    if method in ['i', 'indep', 'p', 'poscorr']:
+        ecdffactor = _ecdf(pvals_sorted)
+    elif method in ['n', 'negcorr']:
+        cm = np.sum(1./np.arange(1, len(pvals_sorted)+1))   #corrected this
+        ecdffactor = _ecdf(pvals_sorted) / cm
+##    elif method in ['n', 'negcorr']:
+##        cm = np.sum(np.arange(len(pvals)))
+##        ecdffactor = ecdf(pvals_sorted)/cm
+    else:
+        raise ValueError('only indep and negcorr implemented')
+    reject = pvals_sorted <= ecdffactor*alpha
+    if reject.any():
+        rejectmax = max(np.nonzero(reject)[0])
+        reject[:rejectmax] = True
+
+    pvals_corrected_raw = pvals_sorted / ecdffactor
+    pvals_corrected = np.minimum.accumulate(pvals_corrected_raw[::-1])[::-1]
+    del pvals_corrected_raw
+    pvals_corrected[pvals_corrected>1] = 1
+    if not is_sorted:
+        pvals_corrected_ = np.empty_like(pvals_corrected)
+        pvals_corrected_[pvals_sortind] = pvals_corrected
+        del pvals_corrected
+        reject_ = np.empty_like(reject)
+        reject_[pvals_sortind] = reject
+        return reject_, pvals_corrected_
+    else:
+        return reject, pvals_corrected
+
+def wilcoxon_rank_sum(counts_x, counts_y, fdr = False):
+    # wilcoxon rank sum test
+    ngenes = counts_x.shape[1]
+    assert ngenes == counts_y.shape[1]
+    pvals = []
+    for gene_i in range(ngenes):
+        _, pval = stats.ranksums(x = counts_x[:, gene_i].squeeze(), y = counts_y[:, gene_i].squeeze())
+        pvals.append(pval)
+    pvals = np.array(pvals)
+
+    # fdr correction
+    if fdr:
+        _, pvals = fdrcorrection(pvals)
+    return pvals
+
 # In[]
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #
@@ -63,7 +179,7 @@ meta_c2 = pd.read_csv(data_dir + "meta_lee_2020.txt", sep = "\t", index_col = 0)
 meta_c3 = pd.read_csv(data_dir + "meta_wilk_2020.txt", sep = "\t", index_col = 0)
 
 meta = pd.concat([meta_c1, meta_c2, meta_c3], axis = 0)
-genes = pd.read_csv(data_dir + "genes_shared.txt", index_col = 0).values.squeeze()
+genes = pd.read_csv(data_dir + "genes_shared.txt", index_col = 0, sep = "\t").values.squeeze()
 # process age
 age = meta.age.values.squeeze().astype(object)
 age[meta["age"] < 40] = "40-"
@@ -174,7 +290,7 @@ model.train()
 losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
 torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-model.eval()
+_ = model.eval()
 # In[] Plot results
 z_cs = []
 z_ds = []
@@ -314,6 +430,15 @@ scores1["R2 input"] = r2_input
 scores1["Method"] = "scdisinfact"
 scores1["Prediction"] = "unseen (moderate, 40-, lee_2020)"
 
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores1 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores1["genes"] = genes
+pvals_scores1["pvals (predict)"] = pvals
+pvals_scores1["pvals (gt)"] = pvals_gt
+pvals_scores1["Prediction"] = "unseen (moderate, 40-, lee_2020)"
+
 # In[] 
 print("# -------------------------------------------------------------------------------------------")
 print("#")
@@ -387,6 +512,15 @@ scores2["R2"] = r2_scdisinfact
 scores2["R2 input"] = r2_input
 scores2["Method"] = "scdisinfact"
 scores2["Prediction"] = "unseen (healthy, 40-65, lee_2020)"
+
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores2 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores2["genes"] = genes
+pvals_scores2["pvals (predict)"] = pvals
+pvals_scores2["pvals (gt)"] = pvals_gt
+pvals_scores2["Prediction"] = "unseen (healthy, 40-65, lee_2020)"
 
 # In[] 
 print("# -------------------------------------------------------------------------------------------")
@@ -462,6 +596,15 @@ scores3["R2 input"] = r2_input
 scores3["Method"] = "scdisinfact"
 scores3["Prediction"] = "unseen (healthy, 65+, lee_2020)"
 
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores3 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores3["genes"] = genes
+pvals_scores3["pvals (predict)"] = pvals
+pvals_scores3["pvals (gt)"] = pvals_gt
+pvals_scores3["Prediction"] = "unseen (healthy, 65+, lee_2020)"
+
 # In[]
 # NOTE: include batch effect
 print("# -------------------------------------------------------------------------------------------")
@@ -536,6 +679,15 @@ scores4["R2 input"] = r2_input
 scores4["Method"] = "scdisinfact"
 scores4["Prediction"] = "unseen (moderate, 40-, !lee_2020)"
 
+
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores4 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores4["genes"] = genes
+pvals_scores4["pvals (predict)"] = pvals
+pvals_scores4["pvals (gt)"] = pvals_gt
+pvals_scores4["Prediction"] = "unseen (moderate, 40-, !lee_2020)"
 # In[] 
 print("# -------------------------------------------------------------------------------------------")
 print("#")
@@ -608,6 +760,15 @@ scores5["R2"] = r2_scdisinfact
 scores5["R2 input"] = r2_input
 scores5["Method"] = "scdisinfact"
 scores5["Prediction"] = "unseen (healthy, 40-65, !lee_2020)"
+
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores5 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores5["genes"] = genes
+pvals_scores5["pvals (predict)"] = pvals
+pvals_scores5["pvals (gt)"] = pvals_gt
+pvals_scores5["Prediction"] = "unseen (healthy, 40-65, !lee_2020)"
 
 # In[] 
 print("# -------------------------------------------------------------------------------------------")
@@ -682,9 +843,20 @@ scores6["R2 input"] = r2_input
 scores6["Method"] = "scdisinfact"
 scores6["Prediction"] = "unseen (healthy, 65+, !lee_2020)"
 
+# de gene analysis
+pvals = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_predict, fdr = True)
+pvals_gt = wilcoxon_rank_sum(counts_x = counts_input, counts_y = counts_gt, fdr = True)
+pvals_scores6 = pd.DataFrame(columns = ["genes", "pvals (predict)", "pvals (gt)", "Prediction"])
+pvals_scores6["genes"] = genes
+pvals_scores6["pvals (predict)"] = pvals
+pvals_scores6["pvals (gt)"] = pvals_gt
+pvals_scores6["Prediction"] = "unseen (healthy, 65+, !lee_2020)"
+# In[]
 scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
 scores.to_csv(result_dir + "scores.csv")
 
+de_pvals = pd.concat([pvals_scores1, pvals_scores2, pvals_scores3, pvals_scores4, pvals_scores5, pvals_scores6], axis = 0)
+de_pvals.to_csv(result_dir + "de_pvals.csv")
 
 # In[]
 # Drop-out does improve the performance
