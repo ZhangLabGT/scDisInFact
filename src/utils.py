@@ -7,6 +7,17 @@ import numpy as np
 # import pandas as pd
 # from adjustText import adjust_text
 
+def set_size(w,h, ax=None):
+    """ w, h: width, height in inches """
+    if not ax: ax=plt.gca()
+    l = ax.figure.subplotpars.left
+    r = ax.figure.subplotpars.right
+    t = ax.figure.subplotpars.top
+    b = ax.figure.subplotpars.bottom
+    figw = float(w)/(r-l)
+    figh = float(h)/(t-b)
+    ax.figure.set_size_inches(figw, figh)
+
 def get_igraph_from_adjacency(adjacency, directed=None):
     """Get igraph graph from adjacency matrix."""
     import igraph as ig
@@ -117,7 +128,7 @@ def leiden_cluster(
     return groups
 
 
-def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, figsize = (20,10), axis_label = "Latent", label_inplace = False, **kwargs):
+def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, figsize = (20,10), axis_label = "Latent", label_inplace = False, legend = True, **kwargs):
     """\
     Description
         Plot latent space
@@ -143,21 +154,25 @@ def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, f
         "alpha": 0.9,
         "markerscale": 1,
         "text_size": "large",
-        "colormap": "tab20b"
+        "colormap": None
     }
     _kwargs.update(kwargs)
 
-    fig = plt.figure(figsize = figsize)
+    fig = plt.figure(figsize = figsize, dpi = 300, constrained_layout=True)
     if (mode == "annos") | (mode == "batches"):
         ax = fig.add_subplot()
         if mode == "annos":
             unique_cluster = np.unique(annos)
-            colormap = plt.cm.get_cmap(_kwargs["colormap"], len(unique_cluster))
-            unique_cluster = sorted(list(unique_cluster))
-
+            if _kwargs["colormap"] is None:
+                colormap = plt.cm.get_cmap("tab20b", len(unique_cluster))
+            else:
+                colormap = _kwargs["colormap"]
         else:
             unique_cluster = np.unique(batches)
-            colormap = plt.cm.get_cmap(_kwargs["colormap"], len(unique_cluster))
+            if _kwargs["colormap"] is None:
+                colormap = plt.cm.get_cmap("tab20b", len(unique_cluster))
+            else:
+                colormap = _kwargs["colormap"]
 
         texts = []
         for i, cluster_type in enumerate(unique_cluster):
@@ -171,12 +186,20 @@ def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, f
             if label_inplace:
                 texts.append(ax.text(np.median(z_clust[:,0]), np.median(z_clust[:,1]), color = "black", s = unique_cluster[i], fontsize = _kwargs["text_size"], weight = 'semibold', in_layout = True))
         
-        ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(unique_cluster) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
-        
+        if legend:
+            leg = ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(unique_cluster) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+            for lh in leg.legendHandles: 
+                lh.set_alpha(1)
+
         ax.tick_params(axis = "both", which = "major", labelsize = 15)
 
         ax.set_xlabel(axis_label + " 1", fontsize = 19)
         ax.set_ylabel(axis_label + " 2", fontsize = 19)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.xaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
+        ax.yaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
+
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)  
         # adjust position
@@ -187,8 +210,10 @@ def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, f
         unique_batch = np.unique(batches)
         unique_cluster = np.unique(annos) 
         axs = fig.subplots(len(unique_batch),1)
-        colormap = plt.cm.get_cmap(_kwargs["colormap"], len(unique_cluster))
-
+        if _kwargs["colormap"] is None:
+            colormap = plt.cm.get_cmap("tab20b", len(unique_cluster))
+        else:
+            colormap = _kwargs["colormap"]
 
         for i, batch in enumerate(unique_batch):
             zs_batch = zs[batches == batch]
@@ -205,7 +230,12 @@ def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, f
                         if zs_batch[index,0].shape[0] > 0:
                             texts.append(axs[i].text(np.median(zs_batch[index,0]), np.median(zs_batch[index,1]), color = "black", s = cluster_type, fontsize = _kwargs["text_size"], weight = 'semibold', in_layout = True))
             
-            axs[i].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(unique_cluster) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+            if legend:
+                leg = axs[i].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = (len(unique_cluster) // 15) + 1, bbox_to_anchor=(1.04, 1), markerscale = _kwargs["markerscale"])
+                for lh in leg.legendHandles: 
+                    lh.set_alpha(1)
+
+                
             axs[i].set_title(batch, fontsize = 25)
 
             axs[i].tick_params(axis = "both", which = "major", labelsize = 15)
@@ -218,9 +248,13 @@ def plot_latent(zs, annos = None, batches = None, mode = "annos", save = None, f
 
             axs[i].set_xlim(np.min(zs[:,0]), np.max(zs[:,0]))
             axs[i].set_ylim(np.min(zs[:,1]), np.max(zs[:,1]))
+            axs[i].xaxis.set_major_locator(plt.MaxNLocator(4))
+            axs[i].yaxis.set_major_locator(plt.MaxNLocator(4))
+            axs[i].xaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
+            axs[i].yaxis.set_major_formatter(plt.FormatStrFormatter('%.1f'))
 
             # if label_inplace:
             #     adjust_text(texts, only_move={'points':'xy', 'texts':'xy'})        
-    plt.tight_layout()
+            plt.tight_layout()
     if save:
         fig.savefig(save, bbox_inches = "tight")

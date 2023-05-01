@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
 from sklearn.metrics import r2_score 
 
@@ -54,7 +54,11 @@ for batch_id in range(n_batches):
     label_annos.append(np.array([('cell type '+str(i)) for i in anno]))    
 
 # In[]
-# NOTE: select counts for each batch
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# In-sample test")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 np.random.seed(0)
 counts_gt_test = []
 counts_test = []
@@ -194,14 +198,12 @@ _ = model.eval()
 # In[]
 print("# -------------------------------------------------------------------------------------------")
 print("#")
-print("# 1. All input matrices for training. use (ctrl, severe, batch 0) as the predict condition")
+print("# 1. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 0).")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
 
-# predict condition 1
 counts_input = []
 meta_input = []
-# input (ctrl, healthy, batch 0)
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
     idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
     counts_input.append(dataset.counts[idx,:].numpy())
@@ -214,7 +216,7 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-# predict (stim, healthy, batch 0)
+# ground truth (ctrl, severe, batch 0)
 counts_gt = []
 meta_gt = []
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
@@ -229,8 +231,6 @@ counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells =
 
 print("ground truth:")
 print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-
 
 # normalize the count
 counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
@@ -276,14 +276,18 @@ scores1["Pearson"] = pearsons_scdisinfact
 scores1["Pearson input"] = pearsons_input
 scores1["R2"] = r2_scdisinfact
 scores1["R2 input"] = r2_input
-scores1["Method"] = "scdisinfact"
-scores1["Prediction"] = "condition effect (condition 1)"
+scores1["Method"] = "scDisInFact"
+scores1["Prediction"] = "Condition 1\n(w/o batch effect)"
 
 
-# predict condition 2
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 2. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 0).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-# input (ctrl, healthy, batch 0)
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
     idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
     counts_input.append(dataset.counts[idx,:].numpy())
@@ -296,7 +300,7 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-# predict (ctrl, severe, batch 0)
+# ground truth (ctrl, severe, batch 0)
 counts_gt = []
 meta_gt = []
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
@@ -356,16 +360,19 @@ scores2["Pearson"] = pearsons_scdisinfact
 scores2["Pearson input"] = pearsons_input
 scores2["R2"] = r2_scdisinfact
 scores2["R2 input"] = r2_input
-scores2["Method"] = "scdisinfact"
-scores2["Prediction"] = "condition effect (condition 2)"
+scores2["Method"] = "scDisInFact"
+scores2["Prediction"] = "Condition 2\n(w/o batch effect)"
 
 # In[]
-# predict condition 1
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 3. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 0).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-# input (ctrl, healthy, batch 1)
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
@@ -376,7 +383,7 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-# predict (ctrl, severe, batch 0)
+# ground truth (ctrl, severe, batch 0)
 counts_gt = []
 meta_gt = []
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
@@ -436,16 +443,19 @@ scores3["Pearson"] = pearsons_scdisinfact
 scores3["Pearson input"] = pearsons_input
 scores3["R2"] = r2_scdisinfact
 scores3["R2 input"] = r2_input
-scores3["Method"] = "scdisinfact"
-scores3["Prediction"] = "condition effect (condition 1) + batch effect"
+scores3["Method"] = "scDisInFact"
+scores3["Prediction"] = "Condition 1&2\n(w/o batch effect)"
 
-
-# predict condition 2
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 4. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-# input (ctrl, healthy, batch 1)
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
     counts_input.append(dataset.counts[idx,:].numpy())
     meta_input.append(meta_cells.loc[idx,:])
 
@@ -456,7 +466,7 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-# predict (ctrl, severe, batch 0)
+# ground truth (ctrl, severe, batch 0)
 counts_gt = []
 meta_gt = []
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
@@ -516,17 +526,184 @@ scores4["Pearson"] = pearsons_scdisinfact
 scores4["Pearson input"] = pearsons_input
 scores4["R2"] = r2_scdisinfact
 scores4["R2 input"] = r2_input
-scores4["Method"] = "scdisinfact"
-scores4["Prediction"] = "condition effect (condition 2) + batch effect"
+scores4["Method"] = "scDisInFact"
+scores4["Prediction"] = "Condition 1\n(w/ batch effect)"
 
-scores = pd.concat([scores1, scores2, scores3, scores4], axis = 0)
+
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 5. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_input = []
+meta_input = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# ground truth (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores5 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores5["MSE"] = mses_scdisinfact
+scores5["MSE input"] = mses_input
+scores5["Pearson"] = pearsons_scdisinfact
+scores5["Pearson input"] = pearsons_input
+scores5["R2"] = r2_scdisinfact
+scores5["R2 input"] = r2_input
+scores5["Method"] = "scDisInFact"
+scores5["Prediction"] = "Condition 2\n(w/ batch effect)"
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 6. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_input = []
+meta_input = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# ground truth (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores6 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores6["MSE"] = mses_scdisinfact
+scores6["MSE input"] = mses_input
+scores6["Pearson"] = pearsons_scdisinfact
+scores6["Pearson input"] = pearsons_input
+scores6["R2"] = r2_scdisinfact
+scores6["R2 input"] = r2_input
+scores6["Method"] = "scDisInFact"
+scores6["Prediction"] = "Condition 1&2\n(w/ batch effect)"
+
+# In[]
+scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
 scores.to_csv(result_dir + "scores_full.csv")
 
 
 # In[]
 print("# -------------------------------------------------------------------------------------------")
 print("#")
-print("# 1. Remove the predicted condition (useen condition). use (ctrl, severe, batch 0) as the predict condition")
+print("# Out-of-sample test")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
 counts_gt = []
@@ -553,153 +730,49 @@ np.random.seed(0)
 counts_gt_test = []
 counts_test = []
 meta_cells = []
-# worst case: missing=4, one matrix for each condition
-missing = 1
+
 for batch_id in range(n_batches):
     # generate permutation
     permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
     # since there are totally four combinations of conditions, separate the cells into four groups
     chuck_size = int(counts_gt[batch_id].shape[0]/4)
 
-    if missing == 1:
-        if batch_id == 0:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-            # remove (ctrl, severe, batch 0)
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+    if batch_id == 0:
+        counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                        counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                        counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+        # remove (ctrl, severe, batch 0)
+        counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                        counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                        counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
 
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
-                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-            meta_cells.append(meta_cell)
-            
-        else:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+        meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+        meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+        meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+        meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+        meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                        label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+                                        label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+        meta_cells.append(meta_cell)
+        
+    else:
+        counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
+                                        counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                        counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
 
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-           
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = label_annos[batch_id][permute_idx]
-            meta_cells.append(meta_cell)
-    
-    elif missing == 2:
-        if batch_id == 0:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-            # remove (ctrl, severe, batch 0)
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
-                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-            meta_cells.append(meta_cell)
-            
-        else:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-           
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
-                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-            meta_cells.append(meta_cell)    
-
-    elif missing == 3:
-        if batch_id == 0:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
-            # remove (ctrl, severe, batch 0)
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
-
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size)
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size)
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]]], axis = 0)
-            meta_cells.append(meta_cell)
-            
-        else:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-           
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
-                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-            meta_cells.append(meta_cell) 
-
-
-    elif missing == 4:
-        if batch_id == 0:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
-            # remove (ctrl, severe, batch 0)
-            counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                            counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:]], axis = 0))
-
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size)
-            meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size)
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]]], axis = 0)
-            meta_cells.append(meta_cell)
-            
-        else:
-            counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-
-            counts_test.append(np.concatenate([counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                            counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-           
-            meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-            meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-            meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["condition 2"] = np.array(["severe"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-            meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[chuck_size:(2*chuck_size)]], 
-                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-            meta_cells.append(meta_cell) 
+        # remove (ctrl, severe, batch 1), don't want to see the count corresponding to condition ctrl & severe
+        counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+                                        counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
+                                        counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+        
+        meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+        meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
+        meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+        meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
+        meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                        label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+                                        label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+        meta_cells.append(meta_cell)
 
 data_dict = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 
@@ -709,16 +782,19 @@ model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = 64,
 
 # train_joint is more efficient, but does not work as well compared to train
 model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_-{missing}.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_-{missing}.pth", map_location = device))
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_oos.pth")
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_oos.pth", map_location = device))
 _ = model.eval()
 
 # In[]
-# predict condition 1
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 1. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 0).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
-# input (stim, severe, batch 0)
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
     idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
     counts_input.append(dataset.counts[idx,:].numpy())
@@ -731,7 +807,6 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
 print("input:")
 print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-# predict (ctrl, severe, batch 0), note that the condition is not included in the training data.
 counts_gt = []
 meta_gt = []
 for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
@@ -791,10 +866,15 @@ scores1["Pearson"] = pearsons_scdisinfact
 scores1["Pearson input"] = pearsons_input
 scores1["R2"] = r2_scdisinfact
 scores1["R2 input"] = r2_input
-scores1["Method"] = "scdisinfact"
-scores1["Prediction"] = "condition effect (condition 1)"
+scores1["Method"] = "scDisInFact"
+scores1["Prediction"] = "Condition 1\n(w/o batch effect)"
 
-# predict condition 2
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 2. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 0).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
 # input (ctrl, healthy, batch 0)
@@ -870,12 +950,99 @@ scores2["Pearson"] = pearsons_scdisinfact
 scores2["Pearson input"] = pearsons_input
 scores2["R2"] = r2_scdisinfact
 scores2["R2 input"] = r2_input
-scores2["Method"] = "scdisinfact"
-scores2["Prediction"] = "condition effect (condition 2)"
-
+scores2["Method"] = "scDisInFact"
+scores2["Prediction"] = "Condition 2\n(w/o batch effect)"
 
 # In[]
-# predict condition 1
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 3. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 0).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 0)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
+
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
+
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
+
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores3["MSE"] = mses_scdisinfact
+scores3["MSE input"] = mses_input
+scores3["Pearson"] = pearsons_scdisinfact
+scores3["Pearson input"] = pearsons_input
+scores3["R2"] = r2_scdisinfact
+scores3["R2 input"] = r2_input
+scores3["Method"] = "scDisInFact"
+scores3["Prediction"] = "Condition 1&2\n(w/o batch effect)"
+
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 4. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
 # input (ctrl, healthy, batch 1)
@@ -944,18 +1111,22 @@ pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_den
 r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores3["MSE"] = mses_scdisinfact
-scores3["MSE input"] = mses_input
-scores3["Pearson"] = pearsons_scdisinfact
-scores3["Pearson input"] = pearsons_input
-scores3["R2"] = r2_scdisinfact
-scores3["R2 input"] = r2_input
-scores3["Method"] = "scdisinfact"
-scores3["Prediction"] = "condition effect (condition 1) + batch effect"
+scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores4["MSE"] = mses_scdisinfact
+scores4["MSE input"] = mses_input
+scores4["Pearson"] = pearsons_scdisinfact
+scores4["Pearson input"] = pearsons_input
+scores4["R2"] = r2_scdisinfact
+scores4["R2 input"] = r2_input
+scores4["Method"] = "scDisInFact"
+scores4["Prediction"] = "Condition 1\n(w/ batch effect)"
 
-
-# predict condition 2
+# In[]
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 5. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
 counts_input = []
 meta_input = []
 # input (ctrl, healthy, batch 1)
@@ -1024,84 +1195,103 @@ pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_den
 r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores4["MSE"] = mses_scdisinfact
-scores4["MSE input"] = mses_input
-scores4["Pearson"] = pearsons_scdisinfact
-scores4["Pearson input"] = pearsons_input
-scores4["R2"] = r2_scdisinfact
-scores4["R2 input"] = r2_input
-scores4["Method"] = "scdisinfact"
-scores4["Prediction"] = "condition effect (condition 2) + batch effect"
-
-scores = pd.concat([scores1, scores2, scores3, scores4], axis = 0)
-scores.to_csv(result_dir + f"scores_missing{missing}.csv")
+scores5 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores5["MSE"] = mses_scdisinfact
+scores5["MSE input"] = mses_input
+scores5["Pearson"] = pearsons_scdisinfact
+scores5["Pearson input"] = pearsons_input
+scores5["R2"] = r2_scdisinfact
+scores5["R2 input"] = r2_input
+scores5["Method"] = "scDisInFact"
+scores5["Prediction"] = "Condition 2\n(w/ batch effect)"
 
 # In[]
-scores_full = pd.read_csv(result_dir + "scores_full.csv", index_col = 0)
-scores_missing1 = pd.read_csv(result_dir + "scores_missing1.csv", index_col = 0)
-scores_missing2 = pd.read_csv(result_dir + "scores_missing2.csv", index_col = 0)
-scores_missing3 = pd.read_csv(result_dir + "scores_missing3.csv", index_col = 0)
-scores_missing4 = pd.read_csv(result_dir + "scores_missing4.csv", index_col = 0)
+print("# -------------------------------------------------------------------------------------------")
+print("#")
+print("# 5. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
+print("#")
+print("# -------------------------------------------------------------------------------------------")
+counts_input = []
+meta_input = []
+# input (ctrl, healthy, batch 1)
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
+    counts_input.append(dataset.counts[idx,:].numpy())
+    meta_input.append(meta_cells.loc[idx,:])
 
-scores_full["training"] = "full"
-scores_missing1["training"] = "missing 1"
-scores_missing2["training"] = "missing 2"
-scores_missing3["training"] = "missing 3"
-scores_missing4["training"] = "missing 4"
-scores = pd.concat([scores_full, scores_missing1, scores_missing2, scores_missing3, scores_missing4], axis = 0)
+counts_input = np.concatenate(counts_input, axis = 0)
+meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
+counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
+print("input:")
+print([x for x in np.unique(meta_input["batch_cond"].values)])
 
-scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
-scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
+# predict (ctrl, severe, batch 0)
+counts_gt = []
+meta_gt = []
+for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
+    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
+    counts_gt.append(dataset.counts[idx,:].numpy())
+    meta_gt.append(meta_cells.loc[idx,:])
 
-scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
-scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
-scores["R2 (ratio)"] = scores["R2"].values/scores["R2 input"]
+counts_gt = np.concatenate(counts_gt, axis = 0)
+meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
+counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+
+print("ground truth:")
+print([x for x in np.unique(meta_gt["batch_cond"].values)])
+
+# normalize the count
+counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+
+# no 1-1 match, check cell-type level scores
+unique_celltypes = np.unique(meta_gt["annos"].values)
+mean_inputs = []
+mean_predicts = []
+mean_gts = []
+mean_gts_denoised = []
+for celltype in unique_celltypes:
+    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+
+    mean_inputs.append(mean_input)
+    mean_predicts.append(mean_predict)
+    mean_gts.append(mean_gt)
+    mean_gts_denoised.append(mean_gt_denoised)
+mean_inputs = np.array(mean_inputs)
+mean_predicts = np.array(mean_predicts)
+mean_gts = np.array(mean_gts)
+mean_gts_denoised = np.array(mean_gts_denoised)
+
+# cell-type-specific normalized MSE
+mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+# cell-type-specific pearson correlation
+pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+# cell-type-specific R2 score
+r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+
+scores6 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+scores6["MSE"] = mses_scdisinfact
+scores6["MSE input"] = mses_input
+scores6["Pearson"] = pearsons_scdisinfact
+scores6["Pearson input"] = pearsons_input
+scores6["R2"] = r2_scdisinfact
+scores6["R2 input"] = r2_input
+scores6["Method"] = "scDisInFact"
+scores6["Prediction"] = "Condition 1&2\n(w/ batch effect)"
 
 # In[]
-import seaborn as sns
-plt.rcParams["font.size"] = 15
-fig = plt.figure(figsize = (34,5))
-ax = fig.subplots(nrows = 1, ncols = 6)
-sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "MSE", ax = ax[0])
-sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "Pearson", ax = ax[1])
-sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "R2", ax = ax[2])
-
-graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "MSE (ratio)", ax = ax[3])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "Pearson (ratio)", ax = ax[4])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores, x = "Prediction", hue = "training", y = "R2 (ratio)", ax = ax[5])
-graph.axhline(1, ls = "--")
-fig.tight_layout()
-
-_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
-_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
-_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
-_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
-_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
-_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
-
-ax[0].get_legend().remove()
-ax[1].get_legend().remove()
-ax[2].get_legend().remove()
-ax[3].get_legend().remove()
-ax[4].get_legend().remove()
-ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
-
-ax[0].set_xlabel(None)
-ax[1].set_xlabel(None)
-ax[2].set_xlabel(None)
-ax[3].set_xlabel(None)
-ax[3].set_yscale("log")
-ax[4].set_xlabel(None)
-ax[5].set_xlabel(None)
-
-ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
-
-fig.savefig(result_dir + "scores.png", bbox_inches = "tight")
+scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
+scores.to_csv(result_dir + f"scores_oos.csv")
 
 # In[]
 # -------------------------------------------------------------------------------------------------
@@ -1113,152 +1303,31 @@ scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pears
 for n_diff_genes in [20, 50, 100]:
     for diff in [2, 4, 8]:
         scdisinfact_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-        scores_full = pd.read_csv(scdisinfact_dir + "scores_full.csv", index_col = 0)
-        scores_missing1 = pd.read_csv(scdisinfact_dir + "scores_missing1.csv", index_col = 0)
-        scores_full["training"] = "full"
-        scores_missing1["training"] = "missing 1"
+        scores_scdisinfact_is = pd.read_csv(scdisinfact_dir + "scores_full.csv", index_col = 0)
+        scores_scdisinfact_oos = pd.read_csv(scdisinfact_dir + "scores_oos.csv", index_col = 0)
+        scores_scdisinfact_is["training"] = "is"
+        scores_scdisinfact_oos["training"] = "oos"
         
         scgen_dir = f"./results_simulated/scgen/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-        scores_scgen_full = pd.read_csv(scgen_dir + "scores_full.csv", index_col = 0)
-        scores_scgen_missing1 = pd.read_csv(scgen_dir + "scores_missing1.csv", index_col = 0)
-        scores_scgen_full["training"] = "full"
-        scores_scgen_missing1["training"] = "missing 1"
+        scores_scgen_is = pd.read_csv(scgen_dir + "scores_full.csv", index_col = 0)
+        scores_scgen_oos = pd.read_csv(scgen_dir + "scores_oos.csv", index_col = 0)
+        scores_scgen_is["training"] = "is"
+        scores_scgen_oos["training"] = "oos"
 
         scpregan_dir = f"./results_simulated/scpregan/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-        scores_scpregan_full = pd.read_csv(scpregan_dir + "scores_full.csv", index_col = 0)
-        scores_scpregan_missing1 = pd.read_csv(scpregan_dir + "scores_missing1.csv", index_col = 0)
-        scores_scpregan_full["training"] = "full"
-        scores_scpregan_missing1["training"] = "missing 1"
-        scores_scpregan_full["Method"] = "scPreGAN"
-        scores_scpregan_missing1["Method"] = "scPreGAN"
+        scores_scpregan_is = pd.read_csv(scpregan_dir + "scores_full.csv", index_col = 0)
+        scores_scpregan_oos = pd.read_csv(scpregan_dir + "scores_oos.csv", index_col = 0)
+        scores_scpregan_is["training"] = "is"
+        scores_scpregan_oos["training"] = "oos"
+        # scores_scpregan_is["Method"] = "scPreGAN"
+        # scores_scpregan_oos["Method"] = "scPreGAN"
 
-        scores = pd.concat([scores_full, scores_missing1, scores_scgen_full, scores_scgen_missing1, 
-                            scores_scpregan_full, scores_scpregan_missing1], axis = 0)
+        scores = pd.concat([scores_scdisinfact_is, scores_scdisinfact_oos, scores_scgen_is, scores_scgen_oos, scores_scpregan_is, scores_scpregan_oos], axis = 0)
 
-        scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
-
-        scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
-        scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
-        scores["R2 (ratio)"] = scores["R2"].values/scores["R2 input"]
-
-        scores_all = pd.concat([scores_all, scores], axis = 0)
-
-scores_full = scores_all[scores_all["training"] == "full"]
-scores_missing1 = scores_all[scores_all["training"] == "missing 1"]
-# In[]
-import seaborn as sns
-plt.rcParams["font.size"] = 15
-fig = plt.figure(figsize = (34,5))
-ax = fig.subplots(nrows = 1, ncols = 6)
-sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
-sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
-sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
-
-graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_full, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
-graph.axhline(1, ls = "--")
-
-_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
-_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
-_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
-_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
-_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
-_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
-
-ax[0].get_legend().remove()
-ax[1].get_legend().remove()
-ax[2].get_legend().remove()
-ax[3].get_legend().remove()
-ax[4].get_legend().remove()
-ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
-
-ax[0].set_xlabel(None)
-ax[1].set_xlabel(None)
-ax[2].set_xlabel(None)
-ax[3].set_xlabel(None)
-ax[0].set_yscale("log")
-ax[3].set_yscale("log")
-ax[4].set_xlabel(None)
-ax[5].set_xlabel(None)
-
-fig.tight_layout()
-# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
-fig.savefig("results_simulated/prediction/scores_is.png", bbox_inches = "tight")
-
-fig = plt.figure(figsize = (34,5))
-ax = fig.subplots(nrows = 1, ncols = 6)
-sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
-sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
-sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
-
-graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_missing1, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
-graph.axhline(1, ls = "--")
-
-
-_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
-_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
-_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
-_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
-_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
-_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
-
-ax[0].get_legend().remove()
-ax[1].get_legend().remove()
-ax[2].get_legend().remove()
-ax[3].get_legend().remove()
-ax[4].get_legend().remove()
-ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
-
-ax[0].set_xlabel(None)
-ax[1].set_xlabel(None)
-ax[2].set_xlabel(None)
-ax[3].set_xlabel(None)
-ax[0].set_yscale("log")
-ax[3].set_yscale("log")
-ax[4].set_xlabel(None)
-ax[5].set_xlabel(None)
-fig.tight_layout()
-# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
-fig.savefig("results_simulated/prediction/scores_oos.png", bbox_inches = "tight")
-
-# In[]
-# -------------------------------------------------------------------------------------------------
-#
-# Test 2
-#
-# -------------------------------------------------------------------------------------------------
-scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction", "training", "MSE (ratio)", "Pearson (ratio)", "R2 (ratio)"])
-for n_diff_genes in [20, 50, 100]:
-    for diff in [2, 4, 8]:
-        result_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-
-        scores_full = pd.read_csv(result_dir + "scores_full.csv", index_col = 0)
-        scores_missing1 = pd.read_csv(result_dir + "scores_missing1.csv", index_col = 0)
-        scores_missing2 = pd.read_csv(result_dir + "scores_missing2.csv", index_col = 0)
-        scores_missing3 = pd.read_csv(result_dir + "scores_missing3.csv", index_col = 0)
-        scores_missing4 = pd.read_csv(result_dir + "scores_missing4.csv", index_col = 0)
-
-        scores_full["training"] = "full"
-        scores_missing1["training"] = "remove 1"
-        scores_missing2["training"] = "remove 2"
-        scores_missing3["training"] = "remove 3"
-        scores_missing4["training"] = "remove 4"
-        scores = pd.concat([scores_full, scores_missing1, scores_missing2, scores_missing3, scores_missing4], axis = 0)
-
-        scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
-        scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
+        # scores.loc[scores["Prediction"] == "condition effect (condition 1)", "Prediction"] = "Condition 1\n(w/o batch effect)"
+        # scores.loc[scores["Prediction"] == "condition effect (condition 2)", "Prediction"] = "Condition 2\n(w/o batch effect)"
+        # scores.loc[scores["Prediction"] == "condition effect (condition 1) + batch effect", "Prediction"] = "Condition 1\n(w/ batch effect)"
+        # scores.loc[scores["Prediction"] == "condition effect (condition 2) + batch effect", "Prediction"] = "Condition 2\n(w/ batch effect)"
 
         scores["MSE (ratio)"] = scores["MSE"].values/scores["MSE input"]
         scores["Pearson (ratio)"] = scores["Pearson"].values/scores["Pearson input"]
@@ -1266,42 +1335,190 @@ for n_diff_genes in [20, 50, 100]:
 
         scores_all = pd.concat([scores_all, scores], axis = 0)
 
+scores_is = scores_all[scores_all["training"] == "is"]
+scores_oos = scores_all[scores_all["training"] == "oos"]
+
+
+
 # In[]
+scores1 = scores_is.loc[(scores_is["Prediction"] == "Condition 1\n(w/o batch effect)") | (scores_is["Prediction"] == "Condition 2\n(w/o batch effect)") | (scores_is["Prediction"] == "Condition 1&2\n(w/o batch effect)"),:]
+scores1.loc[scores1["Prediction"] == "Condition 1\n(w/o batch effect)", "Prediction"] = "Treatment"
+scores1.loc[scores1["Prediction"] == "Condition 2\n(w/o batch effect)", "Prediction"] = "Severity"
+scores1.loc[scores1["Prediction"] == "Condition 1&2\n(w/o batch effect)", "Prediction"] = "Treatment\n& Severity"
+
+scores2 = scores_is.loc[(scores_is["Prediction"] == "Condition 1\n(w/ batch effect)") | (scores_is["Prediction"] == "Condition 2\n(w/ batch effect)") | (scores_is["Prediction"] == "Condition 1&2\n(w/ batch effect)"),:]
+scores2.loc[scores2["Prediction"] == "Condition 1\n(w/ batch effect)", "Prediction"] = "Treatment"
+scores2.loc[scores2["Prediction"] == "Condition 2\n(w/ batch effect)", "Prediction"] = "Severity"
+scores2.loc[scores2["Prediction"] == "Condition 1&2\n(w/ batch effect)", "Prediction"] = "Treatment\n& Severity"
+
 import seaborn as sns
-plt.rcParams["font.size"] = 15
-fig = plt.figure(figsize = (5,20))
-ax = fig.subplots(nrows = 6, ncols = 1)
-scores_all = scores_all[scores_all["Prediction"] == "Condition 1\n(w/ batch effect)"]
-
-# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "MSE", ax = ax[0])
-# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "Pearson", ax = ax[1])
-# sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "R2", ax = ax[2])
-
-# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "MSE (ratio)", ax = ax[3])
-# graph.axhline(1, ls = "--")
-# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "Pearson (ratio)", ax = ax[4])
-# graph.axhline(1, ls = "--")
-# graph = sns.boxplot(data = scores_all, x = "Prediction", hue = "training", y = "R2 (ratio)", ax = ax[5])
-# graph.axhline(1, ls = "--")
-# fig.tight_layout()
-
-sns.boxplot(data = scores_all, x = "training", y = "MSE", ax = ax[0])
-sns.boxplot(data = scores_all, x = "training", y = "Pearson", ax = ax[1])
-sns.boxplot(data = scores_all, x = "training", y = "R2", ax = ax[2])
-
-graph = sns.boxplot(data = scores_all, x = "training", y = "MSE (ratio)", ax = ax[3])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_all, x = "training", y = "Pearson (ratio)", ax = ax[4])
-graph.axhline(1, ls = "--")
-graph = sns.boxplot(data = scores_all, x = "training", y = "R2 (ratio)", ax = ax[5])
-graph.axhline(1, ls = "--")
-
+from matplotlib.ticker import FormatStrFormatter
+plt.rcParams["font.size"] = 20
+fig = plt.figure(figsize = (20,5), dpi = 200)
+ax = fig.subplots(nrows = 1, ncols = 3)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+fig.tight_layout()
 _ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
 _ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
 _ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
-_ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
-_ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
-_ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[0].set_ylabel("MSE", fontsize = 25)
+ax[1].set_ylabel("Pearson", fontsize = 25)
+ax[2].set_ylabel("R2", fontsize = 25)
+# ax[0].yaxis.set_major_locator(plt.MaxNLocator(4))
+# ax[1].yaxis.set_major_locator(plt.MaxNLocator(6))
+# ax[2].yaxis.set_major_locator(plt.MaxNLocator(6))
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+# remove some outliers
+ax[0].set_yscale("log")
+ax[0].set_ylim(10**-5, 10**-1.5)
+ax[1].set_ylim(0.5, 1.1)
+ax[2].set_ylim(0.5, 1.1)
+fig.savefig("results_simulated/prediction/scores_is_wo_batcheffect.png", bbox_inches = "tight")
+
+fig = plt.figure(figsize = (20,5), dpi = 200)
+ax = fig.subplots(nrows = 1, ncols = 3)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+fig.tight_layout()
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6, edgecolor="black")
+
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[0].set_ylabel("MSE", fontsize = 25)
+ax[1].set_ylabel("Pearson", fontsize = 25)
+ax[2].set_ylabel("R2", fontsize = 25)
+# ax[0].yaxis.set_major_locator(plt.MaxNLocator(4))
+# ax[1].yaxis.set_major_locator(plt.MaxNLocator(6))
+# ax[2].yaxis.set_major_locator(plt.MaxNLocator(6))
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+# remove some outliers
+ax[0].set_yscale("log")
+ax[0].set_ylim(10**-5, 10**-1.5)
+ax[1].set_ylim(0.5, 1.1)
+ax[2].set_ylim(0.5, 1.1)
+
+fig.savefig("results_simulated/prediction/scores_is_w_batcheffect.png", bbox_inches = "tight")
+
+# In[]
+scores1 = scores_oos.loc[(scores_oos["Prediction"] == "Condition 1\n(w/o batch effect)") | (scores_oos["Prediction"] == "Condition 2\n(w/o batch effect)") | (scores_oos["Prediction"] == "Condition 1&2\n(w/o batch effect)"),:]
+scores1.loc[scores1["Prediction"] == "Condition 1\n(w/o batch effect)", "Prediction"] = "Treatment"
+scores1.loc[scores1["Prediction"] == "Condition 2\n(w/o batch effect)", "Prediction"] = "Severity"
+scores1.loc[scores1["Prediction"] == "Condition 1&2\n(w/o batch effect)", "Prediction"] = "Treatment\n& Severity"
+
+scores2 = scores_oos.loc[(scores_oos["Prediction"] == "Condition 1\n(w/ batch effect)") | (scores_oos["Prediction"] == "Condition 2\n(w/ batch effect)") | (scores_oos["Prediction"] == "Condition 1&2\n(w/ batch effect)"),:]
+scores2.loc[scores2["Prediction"] == "Condition 1\n(w/ batch effect)", "Prediction"] = "Treatment"
+scores2.loc[scores2["Prediction"] == "Condition 2\n(w/ batch effect)", "Prediction"] = "Severity"
+scores2.loc[scores2["Prediction"] == "Condition 1&2\n(w/ batch effect)", "Prediction"] = "Treatment\n& Severity"
+
+import seaborn as sns
+from matplotlib.ticker import FormatStrFormatter
+plt.rcParams["font.size"] = 20
+fig = plt.figure(figsize = (20,5), dpi = 200)
+ax = fig.subplots(nrows = 1, ncols = 3)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+fig.tight_layout()
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[0].set_ylabel("MSE", fontsize = 25)
+ax[1].set_ylabel("Pearson", fontsize = 25)
+ax[2].set_ylabel("R2", fontsize = 25)
+# ax[0].yaxis.set_major_locator(plt.MaxNLocator(4))
+# ax[1].yaxis.set_major_locator(plt.MaxNLocator(6))
+# ax[2].yaxis.set_major_locator(plt.MaxNLocator(6))
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+# remove some outliers
+ax[0].set_yscale("log")
+ax[0].set_ylim(10**-5, 10**-1.5)
+ax[1].set_ylim(0.5, 1.1)
+ax[2].set_ylim(0.5, 1.1)
+fig.savefig("results_simulated/prediction/scores_oos_wo_batcheffect.png", bbox_inches = "tight")
+
+fig = plt.figure(figsize = (20,5), dpi = 200)
+ax = fig.subplots(nrows = 1, ncols = 3)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+fig.tight_layout()
+_ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+_ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+_ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+ax[0].get_legend().remove()
+ax[1].get_legend().remove()
+leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6, edgecolor="black")
+
+ax[0].set_xlabel(None)
+ax[1].set_xlabel(None)
+ax[2].set_xlabel(None)
+ax[0].set_ylabel("MSE", fontsize = 25)
+ax[1].set_ylabel("Pearson", fontsize = 25)
+ax[2].set_ylabel("R2", fontsize = 25)
+# ax[0].yaxis.set_major_locator(plt.MaxNLocator(4))
+# ax[1].yaxis.set_major_locator(plt.MaxNLocator(6))
+# ax[2].yaxis.set_major_locator(plt.MaxNLocator(6))
+ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+# remove some outliers
+ax[0].set_yscale("log")
+ax[0].set_ylim(10**-5, 10**-1.5)
+ax[1].set_ylim(0.5, 1.1)
+ax[2].set_ylim(0.5, 1.1)
+fig.savefig("results_simulated/prediction/scores_oos_w_batcheffect.png", bbox_inches = "tight")
+
+# In[]
+# import seaborn as sns
+# plt.rcParams["font.size"] = 15
+# fig = plt.figure(figsize = (34,5))
+# ax = fig.subplots(nrows = 1, ncols = 6)
+# sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
+# sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
+# sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
+
+# graph = sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_is, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
+# graph.axhline(1, ls = "--")
+
+# _ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+# _ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+# _ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+# _ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+# _ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+# _ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
 
 # ax[0].get_legend().remove()
 # ax[1].get_legend().remove()
@@ -1310,18 +1527,62 @@ _ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
 # ax[4].get_legend().remove()
 # ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
 
-ax[0].set_xlabel(None)
-ax[1].set_xlabel(None)
-ax[2].set_xlabel(None)
-ax[3].set_xlabel(None)
-ax[0].set_yscale("log")
-ax[3].set_yscale("log")
-ax[4].set_xlabel(None)
-ax[5].set_xlabel(None)
+# ax[0].set_xlabel(None)
+# ax[1].set_xlabel(None)
+# ax[2].set_xlabel(None)
+# ax[3].set_xlabel(None)
+# ax[0].set_yscale("log")
+# ax[3].set_yscale("log")
+# ax[4].set_xlabel(None)
+# ax[5].set_xlabel(None)
+# ax[0].set_ylim(10e-7, 10e-2)
+# ax[1].set_ylim(0.80, 1.03)
+# ax[2].set_ylim(0.37, 1.03)
+# fig.tight_layout()
+# # ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+# fig.savefig("results_simulated/prediction/scores_is.png", bbox_inches = "tight")
 
-fig.tight_layout()
+# fig = plt.figure(figsize = (34,5))
+# ax = fig.subplots(nrows = 1, ncols = 6)
+# sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0])
+# sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1])
+# sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "R2", ax = ax[2])
 
-# ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+# graph = sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "MSE (ratio)", ax = ax[3])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "Pearson (ratio)", ax = ax[4])
+# graph.axhline(1, ls = "--")
+# graph = sns.boxplot(data = scores_oos, x = "Prediction", hue = "Method", y = "R2 (ratio)", ax = ax[5])
+# graph.axhline(1, ls = "--")
 
-fig.savefig("results_simulated/prediction/scores_missing.png", bbox_inches = "tight")
+
+# _ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
+# _ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
+# _ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
+# _ = ax[3].set_xticklabels(ax[3].get_xticklabels(), rotation = 45)
+# _ = ax[4].set_xticklabels(ax[4].get_xticklabels(), rotation = 45)
+# _ = ax[5].set_xticklabels(ax[5].get_xticklabels(), rotation = 45)
+
+# ax[0].get_legend().remove()
+# ax[1].get_legend().remove()
+# ax[2].get_legend().remove()
+# ax[3].get_legend().remove()
+# ax[4].get_legend().remove()
+# ax[5].legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+
+# ax[0].set_xlabel(None)
+# ax[1].set_xlabel(None)
+# ax[2].set_xlabel(None)
+# ax[3].set_xlabel(None)
+# ax[0].set_yscale("log")
+# ax[3].set_yscale("log")
+# ax[4].set_xlabel(None)
+# ax[5].set_xlabel(None)
+# ax[0].set_ylim(10e-7, 10e-2)
+# ax[1].set_ylim(0.80, 1.03)
+# ax[2].set_ylim(0.37, 1.03)
+# fig.tight_layout()
+# # ax[0].ticklabel_format(axis = "y", style = "scientific", scilimits = (0,0))
+# fig.savefig("results_simulated/prediction/scores_oos.png", bbox_inches = "tight")
+
 # %%

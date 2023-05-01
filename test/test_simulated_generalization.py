@@ -637,8 +637,8 @@ for ndiff_genes in [20, 50, 100]:
 
 
 import seaborn as sns
-plt.rcParams["font.size"] = 15
-fig = plt.figure(figsize = (15,5))
+plt.rcParams["font.size"] = 20
+fig = plt.figure(figsize = (12,5))
 ax = fig.subplots(nrows = 1, ncols = 2)
 loss = pd.DataFrame()
 loss["value"] = np.concatenate([loss_is.loc[:, "loss recon"].values, loss_is.loc[:, "loss kl"].values, loss_is.loc[:, "loss mmd"].values, loss_is.loc[:, "loss class"].values, loss_is.loc[:, "loss tc"].values])
@@ -668,8 +668,8 @@ l = plt.legend(handles, labels, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0
 
 ax[0].set_xlabel(None)
 ax[1].set_xlabel(None)
-ax[0].set_ylabel("loss")
-ax[1].set_ylabel("loss")
+ax[0].set_ylabel("Loss")
+ax[1].set_ylabel("Loss")
 
 ax[0].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$", "$\ell_{tc}$"])
 ax[1].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$", "$\ell_{tc}$"])

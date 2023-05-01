@@ -28,13 +28,13 @@ def show_values(axs, orient="v", space=.01):
                 _x = p.get_x() + p.get_width() / 2
                 _y = p.get_y() + p.get_height() + (p.get_height()*0.01)
                 value = '{:.2f}'.format(p.get_height())
-                ax.text(_x, _y, value, ha="center") 
+                ax.text(_x, _y, value, ha="center", color = "blue", fontweight = "bold", fontsize = 20) 
         elif orient == "h":
             for p in ax.patches:
                 _x = p.get_x() + p.get_width() + float(space)
                 _y = p.get_y() + p.get_height() - (p.get_height()*0.5)
                 value = '{:.2f}'.format(p.get_width())
-                ax.text(_x, _y, value, ha="left")
+                ax.text(_x, _y, value, ha="left", color = "blue", fontweight = "bold", fontsize = 20)
 
     if isinstance(axs, np.ndarray):
         for idx, ax in np.ndenumerate(axs):
@@ -49,7 +49,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-result_dir = "GBM_treatment/Fig4_patient/"
+result_dir = "results_GBM_treatment/Fig4_patient/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -74,11 +74,16 @@ counts_norm = counts/(np.sum(counts, axis = 1, keepdims = True) + 1e-6) * 100
 counts_norm = np.log1p(counts_norm)
 x_umap = umap_op.fit_transform(counts_norm)
 
-utils.plot_latent(x_umap, annos = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "patients.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
-utils.plot_latent(x_umap, annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "treatment.png", figsize = (11,7), axis_label = "UMAP", markerscale = 6, s = 2)
-utils.plot_latent(x_umap, annos = np.concatenate([x["location"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "location.png", figsize = (12,7), axis_label = "UMAP", markerscale = 6, s = 2)
-utils.plot_latent(x_umap, annos = np.concatenate([x["gender"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "gender.png", figsize = (10,7), axis_label = "UMAP", markerscale = 6, s = 2)
-utils.plot_latent(x_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "mstatus.png", figsize = (11,7), axis_label = "UMAP", markerscale = 6, s = 2)
+np.save(file = result_dir + "count_umap.npy", arr = x_umap)
+
+# In[]
+x_umap = np.load(result_dir + "count_umap.npy")
+
+utils.plot_latent(x_umap, annos = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "patients.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "treatment.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["location"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "location.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["gender"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "gender.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "mstatus.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
 
 # In[]
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -111,33 +116,10 @@ model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = bat
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 _ = model.eval()
-
-
-# # In[] Plot the loss curve
-# plt.rcParams["font.size"] = 20
-# loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests = losses
-# iters = np.arange(1, len(loss_tests)+1)
-
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_tests, "-*", label = 'Total loss')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
-
-# fig.savefig(result_dir + "total_loss.png", bbox_inches = "tight")
-# fig = plt.figure(figsize = (40, 10))
-# ax = fig.add_subplot()
-# ax.plot(iters, loss_gl_d_tests, "-*", label = 'Group Lasso diff')
-# ax.legend(loc = 'upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor = (1.04, 1))
-# ax.set_yscale('log')
-# for i, j in zip(iters, loss_tests):
-#     ax.annotate("{:.3f}".format(j),xy=(i,j))
 
 comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
 if not os.path.exists(result_dir + comment):
@@ -167,9 +149,16 @@ umap_op = UMAP(min_dist = 0.1, random_state = 0)
 pca_op = PCA(n_components = 2)
 z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
 z_ds_umap = []
-z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
+z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
+# np.save(file = result_dir + comment + "z_cs_umap.npy", arr = z_cs_umap)
+# np.save(file = result_dir + comment + "z_ds_umap.npy", arr = z_ds_umap[0])
+
+# In[]
+z_cs_umap = np.load(file = result_dir + comment + "z_cs_umap.npy")
+z_ds_umap = []
+z_ds_umap.append(np.load(file = result_dir + comment + "z_ds_umap.npy"))
 
 utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]),\
     mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
@@ -185,17 +174,287 @@ utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["mstatus"].values.sq
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "batches", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["sample_id"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "PCA", figsize = (12,7), save = (result_dir + comment+"diff_sample_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
 utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["location"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_location.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["gender"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_gender.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
-utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
+
+
+# In[]
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#
+# Disentanglement
+#
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# read in scinsight
+result_scinsight = "./results_GBM_treatment/Fig4_patient/scinsight/"
+
+W2 = pd.read_csv(result_scinsight + "W2.txt", sep = "\t")
+H1 = pd.read_csv(result_scinsight + "H_1.txt", sep = "\t")
+H2 = pd.read_csv(result_scinsight + "H_2.txt", sep = "\t")
+W11 = pd.read_csv(result_scinsight + "W11.txt", sep = "\t")
+W12 = pd.read_csv(result_scinsight + "W12.txt", sep = "\t")
+W13 = pd.read_csv(result_scinsight + "W13.txt", sep = "\t")
+W14 = pd.read_csv(result_scinsight + "W14.txt", sep = "\t")
+W15 = pd.read_csv(result_scinsight + "W15.txt", sep = "\t")
+W16 = pd.read_csv(result_scinsight + "W16.txt", sep = "\t")
+W17 = pd.read_csv(result_scinsight + "W17.txt", sep = "\t")
+W18 = pd.read_csv(result_scinsight + "W18.txt", sep = "\t")
+W19 = pd.read_csv(result_scinsight + "W19.txt", sep = "\t")
+W110 = pd.read_csv(result_scinsight + "W110.txt", sep = "\t")
+W111 = pd.read_csv(result_scinsight + "W111.txt", sep = "\t")
+
+# H1: ctrl, H2: stim; 
+x_cond = [W11.values@H1.values, W12.values@H1.values, W13.values@H2.values, W14.values@H1.values, W15.values@H2.values, W16.values@H1.values,
+          W17.values@H2.values, W18.values@H1.values, W19.values@H2.values, W110.values@H1.values, W111.values@H2.values]
+x_cond = np.concatenate(x_cond, axis = 0)
+
+umap_op = UMAP(min_dist = 0.1, random_state = 0)
+w2_umap = umap_op.fit_transform(W2.values)
+x_cond_umap = umap_op.fit_transform(x_cond)
+
+meta_scinsight = pd.concat([meta_cell.loc[(meta_cell["patient_id"] == "PW029") & (meta_cell["treatment"] == "vehicle (DMSO)"),:], 
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW030") & (meta_cell["treatment"] == "vehicle (DMSO)"),:], 
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW030") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:], 
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW032") & (meta_cell["treatment"] == "vehicle (DMSO)"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW032") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW034") & (meta_cell["treatment"] == "vehicle (DMSO)"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW034") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW036") & (meta_cell["treatment"] == "vehicle (DMSO)"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW036") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW040") & (meta_cell["treatment"] == "vehicle (DMSO)"),:],
+                            meta_cell.loc[(meta_cell["patient_id"] == "PW040") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:]], ignore_index = True, axis = 0)
+
+utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_celltypes.png" if result_scinsight else None , markerscale = 6, s = 5)
+# utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), batches = meta_scinsight["patient_id"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_scinsight + "common_celltypes_sep.png" if result_scinsight else None , markerscale = 6, s = 5)
+utils.plot_latent(zs = w2_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_batches.png" if result_scinsight else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = w2_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_celltypes.png" if result_scinsight else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_batch.png" if result_scinsight else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
+
+# In[]
+#------------------------------------------------------------------------------------------------------------------------------------------
+#
+# Benchmark, common space, check removal of batch effect (=condition effect), keep cluster information
+#
+#------------------------------------------------------------------------------------------------------------------------------------------
+# removal of batch and condition effect
+# 1. scdisinfact
+n_neighbors = 30
+gc_cluster_scdisinfact = bmk.graph_connectivity(X = np.concatenate(z_cs, axis = 0), groups = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), k = n_neighbors)
+print('GC cluster (scDisInFact): {:.3f}'.format(gc_cluster_scdisinfact))
+silhouette_batch_scdisinfact = bmk.silhouette_batch(X = np.concatenate(z_cs, axis = 0), batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
+                                                    group_gt = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), verbose = False)
+print('Silhouette batch (scDisInFact): {:.3f}'.format(silhouette_batch_scdisinfact))
+# 2. scinsight
+gc_cluster_scinsight = bmk.graph_connectivity(X = W2.values, groups = meta_scinsight["mstatus"].values.squeeze(), k = n_neighbors)
+print('GC cluster (scInsight): {:.3f}'.format(gc_cluster_scinsight))
+silhouette_batch_scinsight = bmk.silhouette_batch(X = W2.values, batch_gt = meta_scinsight["patient_id"].values.squeeze(), group_gt = meta_scinsight["mstatus"].values.squeeze(), verbose = False)
+print('Silhouette batch (scInsight): {:.3f}'.format(silhouette_batch_scinsight))
+
+
+# NMI and ARI measure the separation of cell types
+# 1. scdisinfact
+nmi_cluster_scdisinfact = []
+ari_cluster_scdisinfact = []
+for resolution in np.arange(0.1, 10, 0.5):
+    leiden_labels_clusters = bmk.leiden_cluster(X = np.concatenate(z_cs, axis = 0), knn_indices = None, knn_dists = None, resolution = resolution)
+    print(np.unique(leiden_labels_clusters))
+    nmi_cluster_scdisinfact.append(bmk.nmi(group1 = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_clusters))
+    ari_cluster_scdisinfact.append(bmk.ari(group1 = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_clusters))
+print('NMI (scDisInFact): {:.3f}'.format(max(nmi_cluster_scdisinfact)))
+print('ARI (scDisInFact): {:.3f}'.format(max(ari_cluster_scdisinfact)))
+
+# 2. scinsight
+nmi_cluster_scinsight = []
+ari_cluster_scinsight = []
+for resolution in np.arange(0.1, 10, 0.5):
+    leiden_labels_clusters = bmk.leiden_cluster(X = W2.values, knn_indices = None, knn_dists = None, resolution = resolution)
+    print(np.unique(leiden_labels_clusters))
+    nmi_cluster_scinsight.append(bmk.nmi(group1 = meta_scinsight["mstatus"].values.squeeze(), group2 = leiden_labels_clusters))
+    ari_cluster_scinsight.append(bmk.ari(group1 = meta_scinsight["mstatus"].values.squeeze(), group2 = leiden_labels_clusters))
+print('NMI (scInsight): {:.3f}'.format(max(nmi_cluster_scinsight)))
+print('ARI (scInsight): {:.3f}'.format(max(ari_cluster_scinsight)))
+
+
+# In[]
+#------------------------------------------------------------------------------------------------------------------------------------------
+#
+# condition-specific space, check removal of batch effect, removal of cell type effect, keep condition information
+#
+#------------------------------------------------------------------------------------------------------------------------------------------
+# removal of batch effect, removal of cell type effect
+n_neighbors = 30
+gc_condition_scdisinfact = bmk.graph_connectivity(X = np.concatenate([x[0] for x in z_ds], axis = 0), groups = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), k = n_neighbors)
+print('GC condition (scDisInFact): {:.3f}'.format(gc_condition_scdisinfact))
+silhouette_condition_scdisinfact = bmk.silhouette_batch(X = np.concatenate([x[0] for x in z_ds], axis = 0), batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), group_gt = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), verbose = False)
+print('Silhouette condition, removal of batch effect (scDisInFact): {:.3f}'.format(silhouette_condition_scdisinfact))
+
+gc_condition_scinsight = bmk.graph_connectivity(X = x_cond, groups = meta_scinsight["treatment"].values.squeeze(), k = n_neighbors)
+print('GC condition (scInsight): {:.3f}'.format(gc_condition_scinsight))
+silhouette_condition_scinsight = bmk.silhouette_batch(X = x_cond, batch_gt = meta_scinsight["patient_id"].values.squeeze(), group_gt = meta_scinsight["treatment"].values.squeeze(), verbose = False)
+print('Silhouette condition, removal of batch effect (scInsight): {:.3f}'.format(silhouette_condition_scinsight))
+
+
+# keep of condition information
+nmi_condition_scdisinfact = []
+ari_condition_scdisinfact = []
+# NOTE: the range is not good, only two conditions
+for resolution in range(-3, 1, 1):
+    leiden_labels_conditions = bmk.leiden_cluster(X = np.concatenate([x[0] for x in z_ds], axis = 0), knn_indices = None, knn_dists = None, resolution = 10 ** resolution)
+    print(np.unique(leiden_labels_conditions))
+    nmi_condition_scdisinfact.append(bmk.nmi(group1 = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_conditions))
+    ari_condition_scdisinfact.append(bmk.ari(group1 = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_conditions))
+print('NMI (scDisInFact): {:.3f}'.format(max(nmi_condition_scdisinfact)))
+print('ARI (scDisInFact): {:.3f}'.format(max(ari_condition_scdisinfact)))
+
+nmi_condition_scinsight = []
+ari_condition_scinsight = []
+for resolution in range(-3, 1, 1):
+    leiden_labels_conditions = bmk.leiden_cluster(X = x_cond, knn_indices = None, knn_dists = None, resolution = resolution)
+    print(np.unique(leiden_labels_conditions))
+    nmi_condition_scinsight.append(bmk.nmi(group1 = meta_scinsight["treatment"].values.squeeze(), group2 = leiden_labels_conditions))
+    ari_condition_scinsight.append(bmk.ari(group1 = meta_scinsight["treatment"].values.squeeze(), group2 = leiden_labels_conditions))
+print('NMI (scInsight): {:.3f}'.format(max(nmi_condition_scinsight)))
+print('ARI (scInsight): {:.3f}'.format(max(ari_condition_scinsight)))
+
+
+scores_scdisinfact = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "GC (common)", "GC (condition)", "Silhouette batch (common)", "Silhouette batch (condition & celltype)", "Silhouette batch (condition & batches)"])
+scores_scdisinfact["NMI (common)"] = np.array([max(nmi_cluster_scdisinfact)])
+scores_scdisinfact["ARI (common)"] = np.array([max(ari_cluster_scdisinfact)])
+scores_scdisinfact["GC (common)"] = np.array([gc_cluster_scdisinfact])
+scores_scdisinfact["Silhouette batch (common)"] = np.array([silhouette_batch_scdisinfact])
+
+scores_scdisinfact["NMI (condition)"] = np.array([max(nmi_condition_scinsight)])
+scores_scdisinfact["ARI (condition)"] = np.array([max(ari_condition_scinsight)])
+scores_scdisinfact["GC (condition)"] = np.array([gc_condition_scdisinfact])
+scores_scdisinfact["Silhouette batch (condition & batches)"] = np.array([silhouette_condition_scdisinfact])
+# scores_scdisinfact["Silhouette batch (condition & celltype)"] = np.array([silhouette_condition_scdisinfact2])
+
+scores_scdisinfact["methods"] = np.array(["scDisInFact"])
+
+scores_scinsight = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "GC (common)", "GC (condition)"])
+scores_scinsight["NMI (common)"] = np.array([max(nmi_cluster_scinsight)])
+scores_scinsight["ARI (common)"] = np.array([max(ari_cluster_scinsight)])
+scores_scinsight["GC (common)"] = np.array([gc_cluster_scinsight])
+scores_scinsight["Silhouette batch (common)"] = np.array([silhouette_batch_scinsight])
+
+scores_scinsight["NMI (condition)"] = np.array([max(nmi_condition_scinsight)])
+scores_scinsight["ARI (condition)"] = np.array([max(ari_condition_scinsight)])
+scores_scinsight["GC (condition)"] = np.array([gc_condition_scinsight])
+scores_scinsight["Silhouette batch (condition & batches)"] = np.array([silhouette_condition_scinsight])
+# scores_scinsight["Silhouette batch (condition & celltype)"] = np.array([silhouette_condition_scinsight2])
+
+scores_scinsight["methods"] = np.array(["scINSIGHT"])
+
+scores = pd.concat([scores_scdisinfact, scores_scinsight], axis = 0)
+scores.to_csv(result_dir + "score_disentangle.csv")
+
+# In[]
+from matplotlib.ticker import FormatStrFormatter
+plt.rcParams["font.size"] = 15
+scores = pd.read_csv(result_dir + "score_disentangle.csv", index_col = 0)
+fig = plt.figure(figsize = (15,5))
+ax = fig.subplots(nrows = 1, ncols = 4)
+sns.barplot(data = scores, x = "methods", y = "NMI (common)", ax = ax[0], width = 0.5)
+ax[0].set_ylabel("NMI")
+ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[0].set_title("NMI (shared)")
+ax[0].set_xlabel(None)
+show_values(ax[0])
+
+sns.barplot(data = scores, x = "methods", y = "ARI (common)", ax = ax[1], width = 0.5)
+ax[1].set_ylabel("ARI")
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[1].set_title("ARI (shared)")
+ax[1].set_xlabel(None)
+show_values(ax[1])
+
+sns.barplot(data = scores, x = "methods", y = "GC (common)", ax = ax[2], width = 0.5)
+ax[2].set_ylabel("GC")
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].set_title("GC (shared)")
+ax[2].set_xlabel(None)
+show_values(ax[2])
+
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (common)", ax = ax[3], width = 0.5)
+ax[3].set_ylabel("Silhouette batch")
+ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[3].set_title("Silhouette batch\n(shared)")
+ax[3].set_ylim(0.8, 1)
+ax[3].set_xlabel(None)
+show_values(ax[3])
+
+plt.tight_layout()
+fig.savefig(result_dir + "barplot_common.png", bbox_inches = "tight")
+
+fig = plt.figure(figsize = (15,5))
+ax = fig.subplots(nrows = 1, ncols = 4)
+sns.barplot(data = scores, x = "methods", y = "NMI (condition)", ax = ax[0], width = 0.5)
+ax[0].set_ylabel("NMI")
+ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[0].set_title("NMI (condition)")
+ax[0].set_xlabel(None)
+show_values(ax[0])
+
+sns.barplot(data = scores, x = "methods", y = "ARI (condition)", ax = ax[1], width = 0.5)
+ax[1].set_ylabel("ARI")
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[1].set_title("ARI (condition)")
+ax[1].set_xlabel(None)
+show_values(ax[1])
+
+sns.barplot(data = scores, x = "methods", y = "GC (condition)", ax = ax[2], width = 0.5)
+ax[2].set_ylabel("GC")
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].set_title("GC (condition)")
+ax[2].set_xlabel(None)
+show_values(ax[2])
+
+# sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & celltype)", ax = ax[3])
+# ax[3].set_ylabel("ASW-batch")
+# ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+# ax[3].set_title("Silhouette batch\n(condition & celltype)")
+# ax[3].set_xlabel(None)
+
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[3], width = 0.5)
+ax[3].set_ylabel("ASW-batch")
+ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[3].set_title("Silhouette batch\n(condition & batches)")
+ax[3].set_xlabel(None)
+show_values(ax[3])
+
+plt.tight_layout()
+fig.savefig(result_dir + "barplot_condition.png", bbox_inches = "tight")
+
+
+fig = plt.figure(figsize = (12,5))
+ax = fig.subplots(nrows = 1, ncols = 3)
+sns.barplot(data = scores, x = "methods", y = "ARI (common)", ax = ax[0], width = 0.5)
+ax[0].set_ylabel("ARI")
+ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[0].set_title("shared-bio factors\nARI")
+ax[0].set_xlabel(None)
+show_values(ax[0])
+
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (common)", ax = ax[1], width = 0.5)
+ax[1].set_ylabel("ASW-batch")
+ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[1].set_title("shared-bio factors\nASW-batch")
+ax[1].set_xlabel(None)
+show_values(ax[1])
+
+
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[2], width = 0.5)
+ax[2].set_ylabel("ASW-batch")
+ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+ax[2].set_title("unshared-bio factors\nASW-batch")
+ax[2].set_xlabel(None)
+show_values(ax[2])
+
+plt.tight_layout()
+fig.savefig(result_dir + "barplot_disentangle.png", bbox_inches = "tight")
+
 
 
 # In[] 
