@@ -18,7 +18,7 @@ DESCRIPTION = 'scDisInFact: disentangled learning for integration and prediction
 URL = 'https://github.com/ZhangLabGT/scDisInFact'
 EMAIL = 'zhangziqibuaa@gmail.com'
 AUTHOR = 'Ziqi Zhang'
-REQUIRES_PYTHON = '>=3.7.13'
+REQUIRES_PYTHON = '>=3.7'
 VERSION = '0.1.0'
 
 # What packages are required for this module to be executed?
