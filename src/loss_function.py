@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
-from zinb import *
+from src.zinb import *
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #--------------------------------------------------------------------------
