@@ -27,11 +27,11 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
 
 ### Directory
 * `src` stores the source code of scDisInFact.
-* `test` stores the testing script of scDisInFact (used in the manuscript). Testing datasets in manuscript are not included due to the size and are available upon request.
+* `test` stores the testing script of scDisInFact (used in the manuscript). 
 * `data` stores the testing data of scDisInFact.     
 
 ### Data
-The test dataset in the manuscript is available upon request.
+Testing datasets in manuscript are not included due to the size and are available upon request.
 
 ### Installation
 Install the package by running the following command in the package root directory
