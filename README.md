@@ -31,7 +31,7 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
 * `data` stores the testing data of scDisInFact.     
 
 ### Data
-Testing datasets in manuscript are not included due to the size and are available upon request.
+The repository provides a simulated dataset as the demo data for `demo.ipynb` (stored in `data/demo_data/`). Testing datasets in manuscript are not included due to the size and are available upon request.
 
 ### Installation
 Install the package by running the following command in the package root directory
