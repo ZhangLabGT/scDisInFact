@@ -233,7 +233,7 @@ class scdisinfact(nn.Module):
     >>> model.train_model(nepochs = 100, recon_loss = "NB", reg_contr = 0.01)
     """
     def __init__(self, data_dict, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, reg_tc = 0.5, 
-                 reg_kl = 1e-6, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, enc_injection = True, device = device):
+                 reg_kl = 1e-5, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, enc_injection = True, device = device):
         super().__init__()
         # initialize the parameters
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
@@ -480,7 +480,7 @@ class scdisinfact(nn.Module):
         return loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d
 
 
-    def train_model(self, nepochs = 50, recon_loss = "NB", reg_contr = 0.0):
+    def train_model(self, nepochs = 50, recon_loss = "NB", reg_contr = 0.01):
         """\
         Decription:
         -------------
