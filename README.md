@@ -27,15 +27,19 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
 
 ### Directory
 * `src` stores the source code of scDisInFact.
-* `test` stores the testing script of scDisInFact (used in the manuscript).
+* `test` stores the testing script of scDisInFact (used in the manuscript). Testing datasets in manuscript are not included due to the size and are available upon request.
 * `data` stores the testing data of scDisInFact.     
 
 ### Data
 The test dataset in the manuscript is available upon request.
 
-### Installation and usage
-No installation is needed. 
+### Installation
+Install the package by running the following command in the package root directory
+```
+pip install .
+```
 
+### Usage
 1. Given the input count matrix `counts` (`numpy.array` of the shape `(ncells, ngenes)`) and meta data `meta_cells` (`pandas.dataframe` of the shape `(ncells, xx)`), we first create scdisinfact dataset using
 ```python
 import scdisinfact
@@ -43,7 +47,7 @@ data_dict = scdisinfact.create_scdisinfact_dataset(counts[train_idx,:], meta_cel
 ```
 **Note**: `meta_cells` must include columns corresponding to the batch ID and condition of each cells, and the cells in `meta_cells` should match `counts`. In the example above, we have two condition types: `condition 1` and `condition 2` in `meta_cells`, and the batch ID is stored in `batch` column of of `meta_cells`.
 
-2. Train scdisinfact with the count matrix
+1. Train scdisinfact with the count matrix
 ```python
 # declare latent dimensions, we have two condition types, so there are three element corresponding to 
 # shared-bio factor, unshared-bio factor for condition 1, unshared-bio factor for condition 2
@@ -55,7 +59,7 @@ losses = model.train_model(nepochs = 100)
 _ = model.eval()
 ```
 
-3. Extract shared-bio factor and unshared-bio factors. Shared-bio factor is removed of batch and condition effect.
+1. Extract shared-bio factor and unshared-bio factors. Shared-bio factor is removed of batch and condition effect.
 ```python
 # one forward pass
 z_cs = []
