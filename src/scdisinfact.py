@@ -10,9 +10,8 @@ from torch.autograd import Variable
 import pandas as pd
 import scipy.sparse as sp
 
-sys.path.append(".")
-import model
-import loss_function as loss_func
+import src.model as model 
+import src.loss_function as loss_func
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
