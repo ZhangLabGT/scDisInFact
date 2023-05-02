@@ -4,11 +4,10 @@
 **/.history
 **/.ipynb_checkpoints
 check_points
-old
-**/.ipynb
 **/*.out
 test/_old
 **/*.pth
 **/_*
 DATASET_README*
 test/_*
+data/simulated
