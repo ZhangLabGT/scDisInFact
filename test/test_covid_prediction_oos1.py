@@ -3,11 +3,10 @@ import sys, os
 import torch
 import numpy as np 
 import pandas as pd
-sys.path.append("../src")
-
-import scdisinfact
-import utils
-import bmk
+sys.path.append("..")
+import scDisInFact.model as scdisinfact
+import scDisInFact.utils as utils
+import scDisInFact.bmk as bmk
 
 import matplotlib.pyplot as plt
 import seaborn as sns

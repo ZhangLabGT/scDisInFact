@@ -4,10 +4,11 @@ import torch
 import numpy as np 
 import pandas as pd
 
-sys.path.append("../src")
-import scdisinfact
-import utils
-import bmk
+sys.path.append("..")
+import scDisInFact.model as scdisinfact
+import scDisInFact.utils as utils
+import scDisInFact.bmk as bmk
+
 from umap import UMAP
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler

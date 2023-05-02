@@ -3,11 +3,10 @@ import sys, os
 import torch
 import numpy as np 
 import pandas as pd
-sys.path.append("../src")
-
-import scdisinfact
-import utils
-import bmk
+sys.path.append("..")
+import scDisInFact.model as scdisinfact
+import scDisInFact.utils as utils
+import scDisInFact.bmk as bmk
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -529,7 +528,7 @@ data_dict_train = {"datasets": datasets_array_train, "meta_cells": meta_cells_ar
 data_dict_test = {"datasets": datasets_array_test, "meta_cells": meta_cells_array_test, "matching_dict": data_dict["matching_dict"], "scaler": data_dict["scaler"]}
 
 # In[]
-model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+model = scDisInFact.model(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 

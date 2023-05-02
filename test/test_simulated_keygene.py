@@ -3,9 +3,11 @@ import sys, os
 import torch
 import numpy as np 
 import pandas as pd
-sys.path.append("../src")
-import scdisinfact
-import utils
+sys.path.append("..")
+import scDisInFact.model as scdisinfact
+import scDisInFact.utils as utils
+import scDisInFact.bmk as bmk
+
 from umap import UMAP
 import time
 import warnings
@@ -13,7 +15,7 @@ warnings.filterwarnings('ignore')
 device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 import matplotlib.pyplot as plt
 import seaborn as sns
-import bmk
+
 
 def show_values_on_bars(axs):
     def _show_on_single_plot(ax):        

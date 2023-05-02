@@ -2,7 +2,7 @@
 import scanpy as sc
 import scgen
 import sys
-sys.path.append("../src")
+sys.path.append("../scDisInFact")
 import pandas as pd
 import scanpy as sc
 import numpy as np
@@ -10,7 +10,7 @@ import os
 from anndata import AnnData
 import time
 import torch
-import scdisinfact
+import scDisInFact
 import matplotlib.pyplot as plt
 from scPreGAN import *
 
