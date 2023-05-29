@@ -42,8 +42,8 @@ pip install .
 ### Usage
 1. Given the input count matrix `counts` (`numpy.array` of the shape `(ncells, ngenes)`) and meta data `meta_cells` (`pandas.dataframe` of the shape `(ncells, xx)`), we first create scdisinfact dataset using
 ```python
-import scdisinfact
-data_dict = scdisinfact.create_scdisinfact_dataset(counts[train_idx,:], meta_cells.loc[train_idx,:], condition_key = ["condition 1", "condition 2"], batch_key = "batch")
+from scDisInFact import scdisinfact, create_scdisinfact_dataset
+data_dict = create_scdisinfact_dataset(counts, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 ```
 **Note**: `meta_cells` must include columns corresponding to the batch ID and condition of each cells, and the cells in `meta_cells` should match `counts`. In the example above, we have two condition types: `condition 1` and `condition 2` in `meta_cells`, and the batch ID is stored in `batch` column of of `meta_cells`.
 
@@ -54,7 +54,7 @@ data_dict = scdisinfact.create_scdisinfact_dataset(counts[train_idx,:], meta_cel
 Ks = [8, 4, 4]
 # training device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, device = device)
+model = scdisinfact(data_dict = data_dict, Ks = Ks, device = device)
 losses = model.train_model(nepochs = 100)
 _ = model.eval()
 ```
