@@ -138,21 +138,21 @@ def create_scdisinfact_dataset(counts, meta_cells, condition_key, batch_key, bat
         
     # construct batch_cond pairs that combine batch id with condition types
     if batch_cond_key is None:
-        meta_cells["batch_cond"] = meta_cells[[batch_key] + condition_key].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
+        meta_cells["batch_cond"] = meta_cells[[batch_key] + condition_key].apply(lambda row: '_'.join(row.to_numpy().astype(str)), axis=1)
     else:
-        meta_cells["batch_cond"] = meta_cells[batch_cond_key].values
+        meta_cells["batch_cond"] = meta_cells[batch_cond_key].to_numpy()
     # transfer label to ids
     cond_ids = []
     cond_names = []
     for cond in condition_key:
-        cond_id, cond_name = pd.factorize(meta_cells[cond].values.squeeze(), sort = True)
+        cond_id, cond_name = pd.factorize(meta_cells[cond].to_numpy().squeeze(), sort = True)
         meta_cells[cond + "_id"] = cond_id
         cond_ids.append(cond_id)
         cond_names.append(cond_name)
     
-    batch_ids, batch_names = pd.factorize(meta_cells[batch_key].values.squeeze(), sort = True)
+    batch_ids, batch_names = pd.factorize(meta_cells[batch_key].to_numpy().squeeze(), sort = True)
     meta_cells[batch_key + "_id"] = batch_ids
-    batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].values.squeeze(), sort = True)
+    batch_cond_ids, batch_cond_names = pd.factorize(meta_cells["batch_cond"].to_numpy().squeeze(), sort = True)
     meta_cells["batch_cond_id"] = batch_cond_ids
 
     # normalize the count matrix
