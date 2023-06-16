@@ -1,4 +1,5 @@
 ## scDisInFact
+scDisInFact v0.1.0
 
 ### Description
 scDisInFact is a single-cell data integration and condition effect prediction framework. Given a multi-batches multi-conditions scRNA-seq dataset (see figure below), scDisInFact is able to 
@@ -38,6 +39,8 @@ Install the package by running the following command in the package root directo
 ```
 pip install .
 ```
+The installation takes around 10 minutes on a normal desk computer.
+
 
 ### Usage
 1. Given the input count matrix `counts` (`numpy.array` of the shape `(ncells, ngenes)`) and meta data `meta_cells` (`pandas.dataframe` of the shape `(ncells, xx)`), we first create scdisinfact dataset using
@@ -105,7 +108,7 @@ counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = 
                                       batch_key = "batch", predict_conds = ["ctrl", "healthy"], predict_batch = 0)
 
 ```
-Please check [demo.ipynb](https://github.com/ZhangLabGT/scDisInFact/blob/main/demo.ipynb) and detailed function description for the usage of scDisInFact.
+Please check [demo.ipynb](https://github.com/ZhangLabGT/scDisInFact/blob/main/demo.ipynb) and detailed function description for the usage of scDisInFact, the demo takes around 15 minutes to run on server (GPU: Nvidia A40).
 
 ### Contact
 * Ziqi Zhang: ziqi.zhang@gatech.edu
