@@ -29,7 +29,7 @@ scDisInFact is designed using a conditional variational autoencoder framework. S
 ### Directory
 * `src` stores the source code of scDisInFact.
 * `test` stores the testing script of scDisInFact (used in the manuscript). 
-* `data` stores the testing data of scDisInFact.     
+* `data` stores the testing data of scDisInFact. We only provide the demo data (`demo_data`) on GitHub due to the size of the datasets. The testing datasets in the manuscript are available upon request.  
 
 ### Data
 The repository provides a simulated dataset as the demo data for `demo.ipynb` (stored in `data/demo_data/`). Testing datasets in manuscript are not included due to the size and are available upon request.
