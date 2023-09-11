@@ -4,6 +4,7 @@ import numpy as np
 import torch.optim as opt
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import Module, Parameter, ParameterDict
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import StandardScaler
 from torch.autograd import Variable
@@ -314,8 +315,14 @@ class scdisinfact(nn.Module):
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
         # use a linear classifier as stated in the paper
         self.classifiers = nn.ModuleList([])
+        self.diff_prior_means = nn.ParameterList([])
+        self.diff_prior_logvars = nn.ParameterList([])
+        
         for diff_factor in range(self.n_diff_factors):
+            self.diff_prior_means.append(nn.Parameter(torch.rand((len(self.uniq_diff_labels[diff_factor]), self.Ks["diff_factors"][diff_factor]), device = self.device)))
+            self.diff_prior_logvars.append(nn.Parameter(torch.rand((len(self.uniq_diff_labels[diff_factor]), self.Ks["diff_factors"][diff_factor]), device = self.device)))
             self.classifiers.append(nn.Linear(self.Ks["diff_factors"][diff_factor], len(self.uniq_diff_labels[diff_factor])).to(self.device))
+
         # NOTE: reconstruct the original data, use all latent dimensions as input
         self.Dec = base_model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.2, use_batch_norm = False).to(self.device)
         # Discriminator for factor vae
@@ -443,9 +450,8 @@ class scdisinfact(nn.Module):
         # 2.kl divergence
         # average instead of sum across data within a batch
         loss_kl = torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_c"] - dict_inf["mu_c"] ** 2 - dict_inf["logvar_c"].exp(), dim = 1), dim = 0)
-        for diff_factor in range(self.n_diff_factors):
-            # loss_kl += torch.sum(dict_inf["mu_d"][diff_factor].pow(2).add_(dict_inf["logvar_d"][diff_factor].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_d"][diff_factor])).mul_(-0.5)
-            loss_kl += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - dict_inf["mu_d"][diff_factor] ** 2 - dict_inf["logvar_d"][diff_factor].exp(), dim = 1), dim = 0)    
+        # for diff_factor in range(self.n_diff_factors):
+            # loss_kl += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - dict_inf["mu_d"][diff_factor] ** 2 - dict_inf["logvar_d"][diff_factor].exp(), dim = 1), dim = 0)    
 
         # 3.MMD loss
         # common mmd loss
@@ -464,7 +470,8 @@ class scdisinfact(nn.Module):
         loss_contr = 0
         for diff_factor in range(self.n_diff_factors):
             loss_class += ce_loss(input = dict_gen["z_pred"][diff_factor], target = diff_labels[diff_factor])
-            loss_contr += contr_loss(F.normalize(dict_inf["z_d"][diff_factor]), diff_labels[diff_factor])
+            # loss_contr += contr_loss(F.normalize(dict_inf["z_d"][diff_factor]), diff_labels[diff_factor])
+            loss_contr += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - self.diff_prior_logvars[diff_factor][diff_labels[diff_factor],:] - (dict_inf["logvar_d"][diff_factor].exp() + (dict_inf["mu_d"][diff_factor] - self.diff_prior_means[diff_factor][diff_labels[diff_factor], :]) ** 2)/self.diff_prior_logvars[diff_factor][diff_labels[diff_factor],:].exp(), dim = 1), dim = 0)
         
         # 5.total correlation
         loss_tc = ce_loss(input = torch.cat([dict_gen["y_orig"], dict_gen["y_perm"]], dim = 0), target =torch.tensor([0] * dict_gen["y_orig"].shape[0] + [1] * dict_gen["y_perm"].shape[0], device = self.device))
@@ -596,7 +603,9 @@ class scdisinfact(nn.Module):
                 loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
-                loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * (loss_class + reg_contr * loss_contr) + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
+                # loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * (loss_class + reg_contr * loss_contr) + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
+                loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * loss_class + reg_contr * loss_contr + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
+
                 # print("\nstep2")
                 # print(loss_recon)
                 # print(self.lambs["mmd_diff"] * loss_mmd_diff)
@@ -688,9 +697,11 @@ class scdisinfact(nn.Module):
                             dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                         # total loss
-                        loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * (loss_class_test + reg_contr * loss_contr_test) \
+                        # loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * (loss_class_test + reg_contr * loss_contr_test) \
+                        #     + self.lambs["gl"] * loss_gl_d_test + self.lambs["kl"] * loss_kl_test + self.lambs["tc"] * loss_tc_test
+                        loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * loss_class_test + reg_contr * loss_contr_test \
                             + self.lambs["gl"] * loss_gl_d_test + self.lambs["kl"] * loss_kl_test + self.lambs["tc"] * loss_tc_test
-                  
+                                          
                         print('Epoch {}, Validating Loss: {:.4f}'.format(epoch, loss_test.item()))
                         info = [
                             'loss reconstruction: {:.5f}'.format(loss_recon_test.item()),
@@ -867,134 +878,3 @@ class scdisinfact(nn.Module):
             scores.append(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight.detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:self.ngenes].numpy())
         
         return scores
-
-
-
-    # def predict_counts_optrans(self, input_counts, meta_cells, condition_keys, batch_key, predict_conds = None, predict_batch = None):
-    #     """\
-    #     Description:
-    #     -------------
-    #         Function for condition effect prediction.
-
-    #     Parameters:
-    #     -------------
-    #         input_counts:
-    #             the input count matrix, of the shape (ncells, ngenes), of the type np.array()
-
-    #         meta_cells:
-    #             the meta cell data frame of input count matrix
-            
-    #         condition_keys:
-    #             the list of columns of the meta_cell data frame that correspond to the conditions
-            
-    #         batch_key:
-    #             the column of the meta_cell data frame that correspond to the batches
-
-    #         predict_conds:
-    #             the condition label of the predicted dataset, 
-    #             predict_conds should have length equal to the number of condition type, 
-    #             and should have one condition group id for each condition type,
-    #             default None, where the condition is kept the same as predict_dataset
-
-    #         predict_batch:
-    #             the batch id of the predicted dataset, default None, where batch_ids is kept the same as predict_dataset
-
-    #     Returns:
-    #     -------------
-    #         predicted counts
-        
-    #     """
-    #     # number of condition types should match
-    #     # assert len(self.uniq_diff_labels) == len(predict_conds)        
-    #     # assert len(self.uniq_diff_labels) == len(condition_keys)
-    #     # process the current condition labels
-    #     curr_conds = []
-    #     for idx, condition_key in enumerate(condition_keys):
-    #         curr_cond = np.zeros(meta_cells.shape[0])
-    #         for condition_id, condition in enumerate(self.data_dict["matching_dict"]["cond_names"][idx]):
-    #             curr_cond[meta_cells[condition_key].values.squeeze() == condition] = condition_id
-    #         curr_conds.append(curr_cond)
-        
-    #     # process the predict condition label
-    #     if predict_conds is not None:
-    #         for idx, condition in enumerate(predict_conds):
-    #             predict_conds[idx] = np.array([np.where(self.data_dict["matching_dict"]["cond_names"][idx] == predict_conds[idx])[0][0]] * curr_conds[idx].shape[0])
-
-    #     # process the batch labels
-    #     curr_batch = torch.zeros(meta_cells.shape[0])
-    #     for batch_id, batch in enumerate(self.data_dict["matching_dict"]["batch_name"]):
-    #         curr_batch[meta_cells[batch_key].values.squeeze() == batch] = batch_id
-        
-    #     # process the input count matrix
-    #     size_factor = np.tile(np.sum(input_counts, axis = 1, keepdims = True), (1, input_counts.shape[1]))/100
-    #     counts_norm = np.log1p(input_counts/size_factor)
-    #     # further standardize the count
-    #     counts_norm = torch.FloatTensor(self.data_dict["scaler"].transform(counts_norm))
-
-    #     # pass through training data to obtain delta
-    #     with torch.no_grad():
-    #         diff_labels = [[] for x in range(self.n_diff_factors)]
-    #         z_ds_train = [[] for x in range(self.n_diff_factors)]
-
-    #         for dataset in self.data_dict["datasets"]:
-    #             # infer latent factor on train dataset
-    #             dict_inf_train = self.inference(counts = dataset.counts_norm.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True)
-    #             # extract unshared-bio factors
-    #             z_d = dict_inf_train["mu_d"]                
-    #             for diff_factor, diff_label in enumerate(dataset.diff_labels):
-    #                 # append condition label
-    #                 diff_labels[diff_factor].extend([x for x in diff_label])
-    #                 # append unshared-bio factor
-    #                 z_ds_train[diff_factor].append(z_d[diff_factor])
-
-    #         # pass through predicting data for prediction
-    #         dic_inf_pred = self.inference(counts = counts_norm.to(self.device), batch_ids = curr_batch[:, None].to(self.device), print_stat = True)
-    #         z_ds_pred = dic_inf_pred["mu_d"]
-
-    #         diff_labels = [np.array(x) for x in diff_labels]
-    #         z_ds_train = [torch.concat(x, dim = 0) for x in z_ds_train]   
-
-    #         # store the centroid z_ds for each condition groups
-    #         if predict_conds is not None:
-    #             for diff_factor in range(self.n_diff_factors):
-    #                 # optimal transport
-    #                 pred_distri = []
-    #                 for cond in np.unique(predict_conds[diff_factor]):
-    #                     pred_distri.append(z_ds_train[diff_factor][diff_labels[diff_factor] == cond,:].detach().cpu().numpy())
-    #                 pred_distri = np.concatenate(pred_distri, axis = 0)                   
-
-    #                 # curr_distri = []
-    #                 # for cond in np.unique(curr_conds[diff_factor]):
-    #                 #     curr_distri.append(z_ds_train[diff_factor][diff_labels[diff_factor] == cond,:].detach().cpu().numpy())
-    #                 # curr_distri = np.concatenate(curr_distri, axis = 0)
-                    
-    #                 curr_distri = z_ds_pred[diff_factor].detach().cpu().numpy()
-                    
-    #                 # randomly downsample to reduce calculation time
-    #                 np.random.seed(0)
-    #                 pred_distri_anchor = pred_distri[np.random.choice(pred_distri.shape[0], 1000, replace = False), :]
-    #                 curr_distri_anchor = curr_distri[np.random.choice(curr_distri.shape[0], 1000, replace = False), :]
-                    
-    #                 pdist_pred_anchor = pairwise_distances(pred_distri, pred_distri_anchor)
-    #                 pdist_curr_anchor = pairwise_distances(curr_distri, curr_distri_anchor)
-    #                 print(pred_distri.shape)
-    #                 print(curr_distri.shape)
-
-    #                 _, T = opt_trans.calc_trans(x1 = curr_distri_anchor, x2 = pred_distri_anchor, njobs = 1)
-    #                 delta_anchor = pred_distri_anchor[np.argmax(T, axis = 1),:] - curr_distri_anchor
-    #                 delta = delta_anchor[np.argmin(pdist_curr_anchor, axis = 1),:]                
-
-    #                 z_ds_pred[diff_factor] = z_ds_pred[diff_factor] + torch.FloatTensor(delta).to(self.device)
-
-    #         # generate data from the latent factors
-    #         if predict_batch is None:   
-    #             # predict_batch is kept the same         
-    #             dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = curr_batch[:,None].to(self.device))
-    #         else:
-    #             # predict_batch is given
-    #             predict_batch = torch.tensor([[np.where(self.data_dict["matching_dict"]["batch_name"] == predict_batch)[0][0]] for x in range(curr_batch.shape[0])], device = self.device)
-    #             dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_batch)
-
-    #     return dict_gen["mu"].detach().cpu().numpy(), z_ds_pred, pred_distri, curr_distri
- 
-

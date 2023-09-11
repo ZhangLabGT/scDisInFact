@@ -152,9 +152,6 @@ _ = model.eval()
 
 
 # In[] Plot results
-z_cs = []
-z_ds = []
-zs = []
 # one forward pass
 z_cs = []
 z_ds = []
