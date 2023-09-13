@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.append("..")
-import scDisInFact.model as scdisinfact
+import scDisInFact.model_gmm as scdisinfact
 import scDisInFact.utils as utils
 import scDisInFact.bmk as bmk
 
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
 from sklearn.metrics import r2_score 
 
@@ -79,13 +79,13 @@ print("#")
 print("# -------------------------------------------------------------------------------------------")
 
 
-ablation = "gl"
+ablation = "tc"
 if ablation == "contr":
-    result_dir = "./results_simulated/ablation/contrastive/"
+    result_dir = "./results_simulated/ablation/contrastive_gmmprior/"
 elif ablation == "gl":
-    result_dir = "./results_simulated/ablation/group_lasso/"
+    result_dir = "./results_simulated/ablation/group_lasso_gmmprior/"
 elif ablation == "tc":
-    result_dir = "./results_simulated/ablation/total_correlation/"
+    result_dir = "./results_simulated/ablation/total_correlation_gmmprior/"
 
 for dataset_dir in simulated_lists:
     data_dir = f"../data/simulated/unif/{dataset_dir}/"
@@ -169,10 +169,9 @@ for dataset_dir in simulated_lists:
     nepochs = 50
     interval = 10
     lr = 5e-4
-    reg_gl = 1
+    reg_gl = 0.01
     reg_contr = 0.01
 
-    """
     for reg in [0, 0.01, 0.1, 1]:
         if ablation == "gl":
             reg_gl = reg
@@ -194,7 +193,7 @@ for dataset_dir in simulated_lists:
         _ = model.eval()
 
         torch.save(model.state_dict(), result_dir + f"{dataset_dir}_oos/" + f"scdisinfact_{Ks}_{lambs}.pth")
-    """
+
 
     # Prediction: Select input and predict conditions/batches
     configs_input = [{"condition 1": "stim", "condition 2": "severe", "batch": 0},
@@ -210,8 +209,7 @@ for dataset_dir in simulated_lists:
     for config in configs_input:
         print("input condition: " + str(config))
         for reg in [0, 0.01, 0.1, 1]:
-            
-            # load input and gt count matrices
+            # Load input and ground truth data
             idx = ((meta_train["condition 1"] == config["condition 1"]) & (meta_train["condition 2"] == config["condition 2"]) & (meta_train["batch"] == config["batch"])).values
             # input and ground truth, cells are matched
             counts_input = counts_train[idx, :]
@@ -245,8 +243,6 @@ for dataset_dir in simulated_lists:
             # NOTE: perturbed gene prediction accuracy, measured with AUPRC
             # should be calculated before normalization
             AUPRC = rank_marker(counts_predict = counts_predict, counts_input_denoised = counts_input_denoised, counts_input = counts_input, counts_gt = counts_gt)
-            print("reg_gl: {:.3f}".format(reg_gl))
-            print("perturbation prediction: {:.3f}".format(AUPRC))
 
             # normalize the count
             # Is normalization better? Make sure the libsize of predict and gt are the same for each cell (or they will not be on the same scale)
@@ -331,7 +327,6 @@ for dataset_dir in simulated_lists:
     scores = pd.concat(score_list, axis = 0)
     scores.to_csv(result_dir + f"{dataset_dir}_oos/" + "prediction_scores.csv")
 
-# In[]
 print("# -------------------------------------------------------------------------------------------")
 print("#")
 print("# 2. CKG detection")
@@ -401,8 +396,6 @@ scores_prediction = pd.concat(scores_prediction, axis = 0)
 auprc_dict = pd.read_csv(result_dir + f"CKG_scores.txt", index_col = 0, sep = "\t")
 scores_prediction["MSE ratio"] = scores_prediction["MSE"].values/scores_prediction["MSE input"].values
 scores_prediction["R2 ratio"] = scores_prediction["R2"].values/scores_prediction["R2 input"].values
-auprc_dict = auprc_dict.loc[auprc_dict["Method"] != "reg: 1",:]
-scores_prediction = scores_prediction.loc[scores_prediction["Method"] != "reg: 1",:]
 
 fig = plt.figure(figsize = (12,5))
 # ax = fig.subplots(nrows = 1, ncols = 3)
@@ -417,6 +410,7 @@ fig = plt.figure(figsize = (12,5))
 ax = fig.add_subplot()
 ax = sns.barplot(x='Prediction', y='AUPRC', hue='Method', data=scores_prediction, ax = ax, errwidth=0.1) 
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+
 ax.set_ylim(0.0, 1.2)
 ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
 fig.savefig(result_dir + "prediction_AUPRC.png", bbox_inches = "tight")
@@ -432,11 +426,13 @@ fig.savefig(result_dir + "prediction_R2_ratio.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (12,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x = "ndiff", hue = 'Method', y ='AUPRC', data=auprc_dict, ax = ax, errwidth=0.5, capsize = 0.4)
+ax = sns.barplot(x='ndiff', y='AUPRC', hue = "Method", data=auprc_dict, ax = ax, errwidth=0.1)
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
-ax.set_ylim(0.60, 1)
+# ax.set_ylim(0.60, 1)
 fig.tight_layout()
 fig.savefig(result_dir + "CKGs_AUPRC.png", bbox_inches = "tight")
+
+# In[]
 
 
 # %%
