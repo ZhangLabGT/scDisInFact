@@ -659,12 +659,11 @@ def silhouette_batch(
             sil_per_group = [1 - i for i in sil_per_group]
 
         # batch mixing (1-abs(asw)) for each cell type (group) 
-        sil_all = sil_all.append(
-            pd.DataFrame({
-                'group': [group] * len(sil_per_group),
-                'silhouette_score': sil_per_group
-            })
-        )
+        sil_all = pd.concat([sil_all,
+                             pd.DataFrame({
+                                'group': [group] * len(sil_per_group),
+                                'silhouette_score': sil_per_group
+                            })], axis = 0, ignore_index = True)
 
     sil_all = sil_all.reset_index(drop=True)
     sil_means = sil_all.groupby('group').mean()

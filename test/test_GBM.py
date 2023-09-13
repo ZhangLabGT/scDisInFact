@@ -49,11 +49,13 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-result_dir = "results_GBM_treatment/Fig4_patient/"
+# result_dir = "results_GBM_treatment/Fig4_patient/"
+# result_dir = "results_GBM_treatment/Fig4_patient_gmmprior/"
+result_dir = "results_GBM_treatment/Fig4_patient_nogl/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
-genes = np.loadtxt(data_dir + "genes.txt", dtype = np.object)
+genes = np.loadtxt(data_dir + "genes.txt", dtype = object)
 # orig.ident: patient id _ timepoint (should be batches), 
 # Patient: patient id, 
 # Timepoint: timepoint of sampling, 
@@ -79,11 +81,11 @@ np.save(file = result_dir + "count_umap.npy", arr = x_umap)
 # In[]
 x_umap = np.load(result_dir + "count_umap.npy")
 
-utils.plot_latent(x_umap, annos = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "patients.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
-utils.plot_latent(x_umap, annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "treatment.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
-utils.plot_latent(x_umap, annos = np.concatenate([x["location"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "location.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
-utils.plot_latent(x_umap, annos = np.concatenate([x["gender"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "gender.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
-utils.plot_latent(x_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "mstatus.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, colormap = "tab20b", legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "patients.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "treatment.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["location"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "location.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["gender"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "gender.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, legend = False)
+utils.plot_latent(x_umap, annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), mode = "annos", save = result_dir + "mstatus.png", figsize = (7,5), axis_label = "UMAP", markerscale = 9, s = 2, legend = False)
 
 # In[]
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -97,7 +99,7 @@ importlib.reload(scdisinfact)
 
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
+reg_gl = 0
 reg_tc = 0.5
 reg_class = 1
 reg_kl = 1e-5
@@ -116,8 +118,8 @@ model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = bat
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 _ = model.eval()
 
@@ -152,8 +154,8 @@ z_ds_umap = []
 z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
-# np.save(file = result_dir + comment + "z_cs_umap.npy", arr = z_cs_umap)
-# np.save(file = result_dir + comment + "z_ds_umap.npy", arr = z_ds_umap[0])
+np.save(file = result_dir + comment + "z_cs_umap.npy", arr = z_cs_umap)
+np.save(file = result_dir + comment + "z_ds_umap.npy", arr = z_ds_umap[0])
 
 # In[]
 z_cs_umap = np.load(file = result_dir + comment + "z_cs_umap.npy")
@@ -224,13 +226,13 @@ meta_scinsight = pd.concat([meta_cell.loc[(meta_cell["patient_id"] == "PW029") &
                             meta_cell.loc[(meta_cell["patient_id"] == "PW040") & (meta_cell["treatment"] == "vehicle (DMSO)"),:],
                             meta_cell.loc[(meta_cell["patient_id"] == "PW040") & (meta_cell["treatment"] == "0.2 uM panobinostat"),:]], ignore_index = True, axis = 0)
 
-utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_celltypes.png" if result_scinsight else None , markerscale = 6, s = 5)
-# utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), batches = meta_scinsight["patient_id"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_scinsight + "common_celltypes_sep.png" if result_scinsight else None , markerscale = 6, s = 5)
-utils.plot_latent(zs = w2_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_batches.png" if result_scinsight else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = w2_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_celltypes.png" if result_scinsight else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_batch.png" if result_scinsight else None, markerscale = 6, s = 5)
-utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_celltypes.png" if result_scinsight else None , markerscale = 6, s = 5)
+# # utils.plot_latent(zs = w2_umap, annos = meta_scinsight["mstatus"].values.squeeze(), batches = meta_scinsight["patient_id"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,10), save = result_scinsight + "common_celltypes_sep.png" if result_scinsight else None , markerscale = 6, s = 5)
+# utils.plot_latent(zs = w2_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_batches.png" if result_scinsight else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = w2_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + "common_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["mstatus"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_celltypes.png" if result_scinsight else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["patient_id"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_batch.png" if result_scinsight else None, markerscale = 6, s = 5)
+# utils.plot_latent(zs = x_cond_umap, annos = meta_scinsight["treatment"].values.squeeze(), mode = "annos", axis_label = "UMAP", figsize = (10,5), save = result_scinsight + f"diff1_condition.png" if result_scinsight else None, markerscale = 6, s = 5)
 
 # In[]
 #------------------------------------------------------------------------------------------------------------------------------------------

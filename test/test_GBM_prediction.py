@@ -4,7 +4,7 @@ import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("..")
-import scDisInFact.model as scdisinfact
+import scDisInFact.model_gmm as scdisinfact
 import scDisInFact.utils as utils
 import scDisInFact.bmk as bmk
 
@@ -21,7 +21,7 @@ import seaborn as sns
 from sklearn.metrics import r2_score 
 import scipy.stats as stats
 
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def show_values(axs, orient="v", space=.01):
     def _single(ax):
@@ -51,7 +51,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-result_dir = "results_GBM_treatment/Fig4_patient/prediction/"
+result_dir = "results_GBM_treatment/Fig4_patient_gmmprior/prediction/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -120,7 +120,10 @@ importlib.reload(scdisinfact)
 
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
+# original
+# reg_gl = 1
+# gmmprior
+reg_gl = 0.01
 reg_tc = 0.5
 reg_class = 1
 reg_kl = 1e-5
@@ -139,8 +142,8 @@ model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size
                                 reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
 
 model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 _ = model.eval()
 
