@@ -4,7 +4,7 @@ import torch
 import numpy as np 
 import pandas as pd
 sys.path.append("..")
-import scDisInFact.model_gmm as scdisinfact
+import scDisInFact.model as scdisinfact
 import scDisInFact.utils as utils
 import scDisInFact.bmk as bmk
 
@@ -51,7 +51,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-result_dir = "results_GBM_treatment/Fig4_patient_gmmprior/prediction/"
+result_dir = "results_GBM_treatment/Fig4_patient_new/prediction/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -120,87 +120,82 @@ importlib.reload(scdisinfact)
 
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-# original
-# reg_gl = 1
-# gmmprior
-reg_gl = 0.01
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-reg_kl = 1e-5
-reg_contr = 0.01
+reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
-Ks = [8, 2]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
+Ks = [8, 4]
 
 batch_size = 64
-nepochs = 70
+nepochs = 100
 interval = 10
 lr = 5e-4
 
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+_ = model.eval()
 torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-_ = model.eval()
 
 comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
 if not os.path.exists(result_dir + comment):
     os.makedirs(result_dir + comment)
 
 # In[]
-# # latent embedding of cells in training set
-# z_cs_train = []
-# z_ds_train = []
+# latent embedding of cells in training set
+z_cs_train = []
+z_ds_train = []
 
-# for dataset in data_dict_train["datasets"]:
-#     with torch.no_grad():
-#         # pass through the encoders
-#         dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
-#         # pass through the decoder
-#         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-#         z_c = dict_inf["mu_c"]
-#         z_d = dict_inf["mu_d"]
-#         z = torch.cat([z_c] + z_d, dim = 1)
-#         mu = dict_gen["mu"]        
-#         z_cs_train.append(z_c.cpu().detach().numpy())
-#         z_ds_train.append([x.cpu().detach().numpy() for x in z_d])
+for dataset in data_dict_train["datasets"]:
+    with torch.no_grad():
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]        
+        z_cs_train.append(z_c.cpu().detach().numpy())
+        z_ds_train.append([x.cpu().detach().numpy() for x in z_d])
 
-# # latent embedding of cells in testing set
-# z_cs_test = []
-# z_ds_test = []
+# latent embedding of cells in testing set
+z_cs_test = []
+z_ds_test = []
 
-# for dataset in data_dict_test["datasets"]:
-#     with torch.no_grad():
-#         # pass through the encoders
-#         dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
-#         # pass through the decoder
-#         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
-#         z_c = dict_inf["mu_c"]
-#         z_d = dict_inf["mu_d"]
-#         z = torch.cat([z_c] + z_d, dim = 1)
-#         mu = dict_gen["mu"]        
-#         z_cs_test.append(z_c.cpu().detach().numpy())
-#         z_ds_test.append([x.cpu().detach().numpy() for x in z_d])
+for dataset in data_dict_test["datasets"]:
+    with torch.no_grad():
+        # pass through the encoders
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+        # pass through the decoder
+        dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
+        z_c = dict_inf["mu_c"]
+        z_d = dict_inf["mu_d"]
+        z = torch.cat([z_c] + z_d, dim = 1)
+        mu = dict_gen["mu"]        
+        z_cs_test.append(z_c.cpu().detach().numpy())
+        z_ds_test.append([x.cpu().detach().numpy() for x in z_d])
 
-# umap_op = UMAP(min_dist = 0.1, random_state = 0)
-# pca_op = PCA(n_components = 2)
-# z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs_train + z_cs_test))
-# z_ds_umap = []
-# for diff_factor in range(model.n_diff_factors):
-#     z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[diff_factor] for z_d in z_ds_train + z_ds_test], axis = 0)))
-# for x in meta_cells_array_train:
-#     x["mode"] = "train"
+umap_op = UMAP(min_dist = 0.1, random_state = 0)
+pca_op = PCA(n_components = 2)
+z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs_train + z_cs_test))
+z_ds_umap = []
+for diff_factor in range(model.n_diff_factors):
+    z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[diff_factor] for z_d in z_ds_train + z_ds_test], axis = 0)))
+for x in meta_cells_array_train:
+    x["mode"] = "train"
 
-# for x in meta_cells_array_test:
-#     x["mode"] = "test"
+for x in meta_cells_array_test:
+    x["mode"] = "test"
 
-# meta_cells_train_test = pd.concat(meta_cells_array_train + meta_cells_array_test, axis = 0, ignore_index = True)
-# utils.plot_latent(zs = z_cs_umap, annos = meta_cells_train_test["mstatus"].values.squeeze(), batches = meta_cells_train_test["mode"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,12), save = result_dir + comment+f"annos_train_test.png" if result_dir else None, markerscale = 6, s = 5)
-# utils.plot_latent(zs = z_ds_umap[0], annos = meta_cells_train_test["treatment"].values.squeeze(), batches = meta_cells_train_test["mode"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,12), save = result_dir + comment+f"treatment_train_test.png" if result_dir else None, markerscale = 6, s = 5)
+meta_cells_train_test = pd.concat(meta_cells_array_train + meta_cells_array_test, axis = 0, ignore_index = True)
+utils.plot_latent(zs = z_cs_umap, annos = meta_cells_train_test["mstatus"].values.squeeze(), batches = meta_cells_train_test["mode"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,12), save = result_dir + comment+f"sharedfactor_train_test.png" if result_dir else None, markerscale = 6, s = 5)
+utils.plot_latent(zs = z_ds_umap[0], annos = meta_cells_train_test["treatment"].values.squeeze(), batches = meta_cells_train_test["mode"].values.squeeze(), mode = "separate", axis_label = "UMAP", figsize = (10,12), save = result_dir + comment+f"unsharedfactor_train_test.png" if result_dir else None, markerscale = 6, s = 5)
 
 # In[]
 # input matrix, considering two cases: 1. vehicle (DMSO) in the same batch; 2. vehicle (DMSO) in a different batch
@@ -317,11 +312,11 @@ scores1["Prediction"] = "treatment\n(w/o batch effect)"
 # PCA calculation will cost scdisinfact prediction to loss information
 x_pca_scdisinfact = np.log1p(np.concatenate([counts_gt_denoised, counts_scdisinfact], axis = 0))
 x_umap_scdisinfact = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scdisinfact)
-np.save(file = result_dir + "predict_scdisinfact(same).npy", arr = x_umap_scdisinfact)
-x_umap_scdisinfact = np.load(result_dir + "predict_scdisinfact(same).npy")
+np.save(file = result_dir + comment + "predict_scdisinfact(same).npy", arr = x_umap_scdisinfact)
+x_umap_scdisinfact = np.load(result_dir + comment + "predict_scdisinfact(same).npy")
 # utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scdisinfact(samebatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scdisinfact(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scdisinfact, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scdisinfact_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scdisinfact(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scdisinfact, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scdisinfact_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 
 # x_pca_scdisinfact_opt = np.log1p(np.concatenate([counts_gt_denoised, counts_scdisinfact_opt], axis = 0))
@@ -332,19 +327,19 @@ utils.plot_latent(x_umap_scdisinfact, annos = np.array(["2. Gold-standard"] * me
 
 x_pca_scgen = np.log1p(np.concatenate([counts_gt, counts_scgen], axis = 0))
 x_umap_scgen = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scgen)
-np.save(file = result_dir + "predict_scgen(same).npy", arr = x_umap_scgen)
-x_umap_scgen = np.load(result_dir + "predict_scgen(same).npy")
+np.save(file = result_dir + comment + "predict_scgen(same).npy", arr = x_umap_scgen)
+x_umap_scgen = np.load(result_dir + comment + "predict_scgen(same).npy")
 # utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scgen(samebatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scgen(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scgen, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scgen_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scgen(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scgen, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scgen_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 x_pca_scpregan = np.log1p(np.concatenate([counts_gt, counts_scpregan], axis = 0))
 x_umap_scpregan = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scpregan)
-np.save(file = result_dir + "predict_scpregan(same).npy", arr = x_umap_scpregan)
-x_umap_scpregan = np.load(result_dir + "predict_scpregan(same).npy")
+np.save(file = result_dir + comment + "predict_scpregan(same).npy", arr = x_umap_scpregan)
+x_umap_scpregan = np.load(result_dir + comment + "predict_scpregan(same).npy")
 # utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scpregan(samebatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scpregan(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scpregan, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scpregan_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scpregan(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scpregan, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scpregan_batches(samebatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 # In[]
 # input matrix, considering two cases: 1. vehicle (DMSO) in the same batch; 2. vehicle (DMSO) in a different batch
@@ -444,31 +439,31 @@ scores2["Prediction"] = "treatment\n(w/ batch effect)"
 # x_pca_scdisinfact = PCA(n_components = 30).fit_transform(np.log1p(np.concatenate([counts_scdisinfact, counts_gt_denoised], axis = 0)))
 x_pca_scdisinfact = np.log1p(np.concatenate([counts_gt_denoised, counts_scdisinfact], axis = 0))
 x_umap_scdisinfact = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scdisinfact)
-np.save(file = result_dir + "predict_scdisinfact(diff).npy", arr = x_umap_scdisinfact)
-x_umap_scdisinfact = np.load(result_dir + "predict_scdisinfact(diff).npy")
+np.save(file = result_dir + comment + "predict_scdisinfact(diff).npy", arr = x_umap_scdisinfact)
+x_umap_scdisinfact = np.load(result_dir + comment + "predict_scdisinfact(diff).npy")
 # utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scdisinfact(diffbatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scdisinfact(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scdisinfact, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scdisinfact_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scdisinfact, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scdisinfact(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scdisinfact, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scdisinfact_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 x_pca_scgen = np.log1p(np.concatenate([counts_gt, counts_scgen], axis = 0))
 x_umap_scgen = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scgen)
-np.save(file = result_dir + "predict_scgen(diff).npy", arr = x_umap_scgen)
-x_umap_scgen = np.load(result_dir + "predict_scgen(diff).npy")
+np.save(file = result_dir + comment + "predict_scgen(diff).npy", arr = x_umap_scgen)
+x_umap_scgen = np.load(result_dir + comment + "predict_scgen(diff).npy")
 # utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scgen(diffbatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scgen(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scgen, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scgen_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scgen, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scgen(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scgen, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scgen_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 x_pca_scpregan = np.log1p(np.concatenate([counts_gt, counts_scpregan], axis = 0))
 x_umap_scpregan = UMAP(min_dist = 0.1, random_state = 0).fit_transform(x_pca_scpregan)
-np.save(file = result_dir + "predict_scpregan(diff).npy", arr = x_umap_scpregan)
-x_umap_scpregan = np.load(result_dir + "predict_scpregan(diff).npy")
+np.save(file = result_dir + comment + "predict_scpregan(diff).npy", arr = x_umap_scpregan)
+x_umap_scpregan = np.load(result_dir + comment + "predict_scpregan(diff).npy")
 # utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), batches = np.array(["Ground truth"] * meta_gt.shape[0] + ["Predict"] * meta_input.shape[0] ), mode = "separate", save = result_dir + "predict_sep_scpregan(diffbatch).png", figsize = (10,10), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + "predict_scpregan(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
-utils.plot_latent(x_umap_scpregan, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + "predict_scpregan_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scpregan, annos = pd.concat([meta_gt, meta_input], axis = 0)["mstatus"].values.squeeze(), mode = "annos", save = result_dir + comment + "predict_scpregan(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
+utils.plot_latent(x_umap_scpregan, annos = np.array(["2. Gold-standard"] * meta_gt.shape[0] + ["1. Predict"] * meta_input.shape[0]), mode = "annos", save = result_dir + comment + "predict_scpregan_batches(diffbatch).png", figsize = (8,5), axis_label = "UMAP", markerscale = 6)
 
 # In[]
 scores = pd.concat([scores1, scores2], axis = 0)
-scores.to_csv(result_dir + "scores_denoised.csv")
+scores.to_csv(result_dir + comment + "scores_denoised.csv")
 
 
 # In[]
@@ -476,7 +471,7 @@ import seaborn as sns
 plt.rcParams["font.size"] = 15
 fig = plt.figure(figsize = (15,5), dpi = 500)
 ax = fig.subplots(nrows = 1, ncols = 3)
-scores = pd.read_csv(result_dir + "scores_denoised.csv", index_col = 0)
+scores = pd.read_csv(result_dir + comment + "scores_denoised.csv", index_col = 0)
 
 sns.barplot(data = scores, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], capsize = 0.1)
 sns.barplot(data = scores, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], capsize = 0.1)
@@ -526,7 +521,7 @@ ax[0].set_yscale("log")
 ax[2].set_ylim(0.0, 1.0)
 
 fig.tight_layout()
-fig.savefig(result_dir + "scores_denoised.png", bbox_inches = "tight")
+fig.savefig(result_dir + comment + "scores_denoised.png", bbox_inches = "tight")
 
 
 

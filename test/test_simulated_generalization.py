@@ -23,12 +23,12 @@ device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 from sklearn.metrics import r2_score 
 
 loss_df = pd.DataFrame(columns = ["loss recon (train)", "loss recon (test)", "loss kl (train)", "loss kl (test)", \
-    "loss mmd (train)", "loss mmd (test)", "loss classi (train)", "loss classi (test)", "loss tc (train)", "loss tc (test)", "test"])
+    "loss mmd (train)", "loss mmd (test)", "loss classi (train)", "loss classi (test)", "test"])
 
 # In[]
 sigma = 0.4
 n_diff_genes = 100
-diff = 8
+diff = 4
 ngenes = 500
 ncells_total = 10000 
 n_batches = 2
@@ -97,22 +97,17 @@ data_dict_full = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells,
 
 # In[] training the model
 # TODO: track the time usage and memory usage
-import importlib 
-importlib.reload(scdisinfact)
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-# loss_kl explode, 1e-5 is too large
-reg_kl = 1e-5
-reg_contr = 0.01
-# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
-Ks = [8, 4, 4]
+reg_gl = 1
 
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
+Ks = [8, 4, 4]
 batch_size = 64
-# kl term explode when nepochs = 70
 nepochs = 50
 interval = 10
 lr = 5e-4
@@ -168,23 +163,21 @@ data_dict_test = {"datasets": datasets_array_test, "meta_cells": meta_cells_arra
 # In[]
 
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+_ = model.eval()
 torch.save(model.state_dict(), result_dir + f"generalization_is/scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"generalization_is/scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-_ = model.eval()
 
 # In[] Plot results
 LOSS_RECON_TRAIN = 0
-LOSS_KL_TRAIN = 0
+LOSS_KL_COMM_TRAIN = 0
+LOSS_KL_DIFF_TRAIN = 0
 LOSS_MMD_COMM_TRAIN = 0
 LOSS_MMD_DIFF_TRAIN = 0
 LOSS_CLASS_TRAIN = 0
-LOSS_CONTR_TRAIN = 0
-LOSS_TC_TRAIN = 0
 LOSS_GL_D_TRAIN = 0
 
 np.random.seed(0)
@@ -236,22 +229,20 @@ with torch.no_grad():
         count = counts.to(model.device), batch_id = mmd_batch_id.to(model.device), diff_labels = [x.to(model.device) for x in diff_labels], recon_loss = "NB")
 
     LOSS_RECON_TRAIN += losses[0].item()
-    LOSS_KL_TRAIN += losses[1].item()
-    LOSS_MMD_COMM_TRAIN += losses[2].item()
-    LOSS_MMD_DIFF_TRAIN += losses[3].item()
-    LOSS_CLASS_TRAIN += losses[4].item()
-    LOSS_CONTR_TRAIN += losses[5].item()
-    LOSS_TC_TRAIN += losses[6].item()
-    LOSS_GL_D_TRAIN += losses[7].item()
+    LOSS_KL_COMM_TRAIN += losses[1].item()
+    LOSS_KL_DIFF_TRAIN += losses[2].item()
+    LOSS_MMD_COMM_TRAIN += losses[3].item()
+    LOSS_MMD_DIFF_TRAIN += losses[4].item()
+    LOSS_CLASS_TRAIN += losses[5].item()
+    LOSS_GL_D_TRAIN += losses[6].item()
 
 print("Train:")
 print(f"LOSS RECON: {LOSS_RECON_TRAIN}")
-print(f"LOSS KL: {LOSS_KL_TRAIN}")
+print(f"LOSS KL (COMM): {LOSS_KL_COMM_TRAIN}")
+print(f"LOSS KL (DIFF): {LOSS_KL_DIFF_TRAIN}")
 print(f"LOSS MMD (COMM): {LOSS_MMD_COMM_TRAIN}")
 print(f"LOSS MMD (DIFF): {LOSS_MMD_DIFF_TRAIN}")
 print(f"LOSS CLASS: {LOSS_CLASS_TRAIN}")
-print(f"LOSS CONTR: {LOSS_CONTR_TRAIN}")
-print(f"LOSS TC: {LOSS_TC_TRAIN}")
 print(f"LOSS GL D: {LOSS_GL_D_TRAIN}")
 
 
@@ -259,12 +250,11 @@ print(f"LOSS GL D: {LOSS_GL_D_TRAIN}")
 # In[] NOTE: Check, even when training together, the loss is very different, potential bug
 # NOTE: could be the issue of standard scaler in the preprocessing step between train and test
 LOSS_RECON_TEST = 0
-LOSS_KL_TEST = 0
+LOSS_KL_COMM_TEST = 0
+LOSS_KL_DIFF_TEST = 0
 LOSS_MMD_COMM_TEST = 0
 LOSS_MMD_DIFF_TEST = 0
 LOSS_CLASS_TEST = 0
-LOSS_CONTR_TEST = 0
-LOSS_TC_TEST = 0
 LOSS_GL_D_TEST = 0
 
 np.random.seed(0)
@@ -315,29 +305,27 @@ with torch.no_grad():
         count = counts.to(model.device), batch_id = mmd_batch_id.to(model.device), diff_labels = [x.to(model.device) for x in diff_labels], recon_loss = "NB")
 
     LOSS_RECON_TEST += losses[0].item()
-    LOSS_KL_TEST += losses[1].item()
-    LOSS_MMD_COMM_TEST += losses[2].item()
-    LOSS_MMD_DIFF_TEST += losses[3].item()
-    LOSS_CLASS_TEST += losses[4].item()
-    LOSS_CONTR_TEST += losses[5].item()
-    LOSS_TC_TEST += losses[6].item()
-    LOSS_GL_D_TEST += losses[7].item()
+    LOSS_KL_COMM_TEST += losses[1].item()
+    LOSS_KL_DIFF_TEST += losses[2].item()
+    LOSS_MMD_COMM_TEST += losses[3].item()
+    LOSS_MMD_DIFF_TEST += losses[4].item()
+    LOSS_CLASS_TEST += losses[5].item()
+    LOSS_GL_D_TEST += losses[6].item()
 
 print("\nTEST:")
 print(f"LOSS RECON: {LOSS_RECON_TEST}")
-print(f"LOSS KL: {LOSS_KL_TEST}")
+print(f"LOSS KL (COMM): {LOSS_KL_COMM_TEST}")
+print(f"LOSS KL (DIFF): {LOSS_KL_DIFF_TEST}")
 print(f"LOSS MMD (COMM): {LOSS_MMD_COMM_TEST}")
 print(f"LOSS MMD (DIFF): {LOSS_MMD_DIFF_TEST}")
 print(f"LOSS CLASS: {LOSS_CLASS_TEST}")
-print(f"LOSS CONTR: {LOSS_CONTR_TEST}")
-print(f"LOSS TC: {LOSS_TC_TEST}")
 print(f"LOSS GL D: {LOSS_GL_D_TEST}")
 
 
 loss_df = pd.concat([loss_df, pd.DataFrame.from_dict({"loss recon (train)": [LOSS_RECON_TRAIN], "loss recon (test)": [LOSS_RECON_TEST], \
-    "loss kl (train)": [LOSS_KL_TRAIN], "loss kl (test)": [LOSS_KL_TEST], "loss mmd (train)": [LOSS_MMD_COMM_TRAIN + LOSS_MMD_DIFF_TRAIN], \
+    "loss kl (train)": [LOSS_KL_COMM_TRAIN + LOSS_KL_DIFF_TRAIN], "loss kl (test)": [LOSS_KL_COMM_TEST + LOSS_KL_DIFF_TEST], "loss mmd (train)": [LOSS_MMD_COMM_TRAIN + LOSS_MMD_DIFF_TRAIN], \
         "loss mmd (test)": [LOSS_MMD_COMM_TEST + LOSS_MMD_DIFF_TEST], "loss classi (train)": [LOSS_CLASS_TRAIN], "loss classi (test)": [LOSS_CLASS_TEST],\
-            "loss tc (train)": [LOSS_TC_TRAIN], "loss tc (test)": [LOSS_TC_TEST], "test": ["in sample"], "dataset": [f"2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}"]})], 
+          "test": ["in sample"], "dataset": [f"2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}"]})], 
             ignore_index = True)
 # In[]
 umap_op = UMAP(min_dist = 0.1, random_state = 0)
@@ -413,24 +401,22 @@ data_dict_test = {"datasets": datasets_array_test, "meta_cells": meta_cells_arra
 
 # In[]
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
-
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+_ = model.eval()
 torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-_ = model.eval()
+
 
 # In[] Plot results
 LOSS_RECON_TRAIN = 0
-LOSS_KL_TRAIN = 0
+LOSS_KL_COMM_TRAIN = 0
+LOSS_KL_DIFF_TRAIN = 0
 LOSS_MMD_COMM_TRAIN = 0
 LOSS_MMD_DIFF_TRAIN = 0
 LOSS_CLASS_TRAIN = 0
-LOSS_CONTR_TRAIN = 0
-LOSS_TC_TRAIN = 0
 LOSS_GL_D_TRAIN = 0
 
 np.random.seed(0)
@@ -482,22 +468,20 @@ with torch.no_grad():
         count = counts.to(model.device), batch_id = mmd_batch_id.to(model.device), diff_labels = [x.to(model.device) for x in diff_labels], recon_loss = "NB")
 
     LOSS_RECON_TRAIN += losses[0].item()
-    LOSS_KL_TRAIN += losses[1].item()
-    LOSS_MMD_COMM_TRAIN += losses[2].item()
-    LOSS_MMD_DIFF_TRAIN += losses[3].item()
-    LOSS_CLASS_TRAIN += losses[4].item()
-    LOSS_CONTR_TRAIN += losses[5].item()
-    LOSS_TC_TRAIN += losses[6].item()
-    LOSS_GL_D_TRAIN += losses[7].item()
+    LOSS_KL_COMM_TRAIN += losses[1].item()
+    LOSS_KL_DIFF_TRAIN += losses[2].item()
+    LOSS_MMD_COMM_TRAIN += losses[3].item()
+    LOSS_MMD_DIFF_TRAIN += losses[4].item()
+    LOSS_CLASS_TRAIN += losses[5].item()
+    LOSS_GL_D_TRAIN += losses[6].item()
 
 print("Train:")
 print(f"LOSS RECON: {LOSS_RECON_TRAIN}")
-print(f"LOSS KL: {LOSS_KL_TRAIN}")
+print(f"LOSS KL (COMM): {LOSS_KL_COMM_TRAIN}")
+print(f"LOSS KL (DIFF): {LOSS_KL_DIFF_TRAIN}")
 print(f"LOSS MMD (COMM): {LOSS_MMD_COMM_TRAIN}")
 print(f"LOSS MMD (DIFF): {LOSS_MMD_DIFF_TRAIN}")
 print(f"LOSS CLASS: {LOSS_CLASS_TRAIN}")
-print(f"LOSS CONTR: {LOSS_CONTR_TRAIN}")
-print(f"LOSS TC: {LOSS_TC_TRAIN}")
 print(f"LOSS GL D: {LOSS_GL_D_TRAIN}")
 
 
@@ -505,12 +489,11 @@ print(f"LOSS GL D: {LOSS_GL_D_TRAIN}")
 # In[] NOTE: Check, even when training together, the loss is very different, potential bug
 # NOTE: could be the issue of standard scaler in the preprocessing step between train and test
 LOSS_RECON_TEST = 0
-LOSS_KL_TEST = 0
+LOSS_KL_COMM_TEST = 0
+LOSS_KL_DIFF_TEST = 0
 LOSS_MMD_COMM_TEST = 0
 LOSS_MMD_DIFF_TEST = 0
 LOSS_CLASS_TEST = 0
-LOSS_CONTR_TEST = 0
-LOSS_TC_TEST = 0
 LOSS_GL_D_TEST = 0
 
 np.random.seed(0)
@@ -561,29 +544,26 @@ with torch.no_grad():
         count = counts.to(model.device), batch_id = mmd_batch_id.to(model.device), diff_labels = [x.to(model.device) for x in diff_labels], recon_loss = "NB")
 
     LOSS_RECON_TEST += losses[0].item()
-    LOSS_KL_TEST += losses[1].item()
-    LOSS_MMD_COMM_TEST += losses[2].item()
-    LOSS_MMD_DIFF_TEST += losses[3].item()
-    LOSS_CLASS_TEST += losses[4].item()
-    # is 0 because the test data are all from the same condition class
-    LOSS_CONTR_TEST += losses[5].item()
-    LOSS_TC_TEST += losses[6].item()
-    LOSS_GL_D_TEST += losses[7].item()
+    LOSS_KL_COMM_TEST += losses[1].item()
+    LOSS_KL_DIFF_TEST += losses[2].item()
+    LOSS_MMD_COMM_TEST += losses[3].item()
+    LOSS_MMD_DIFF_TEST += losses[4].item()
+    LOSS_CLASS_TEST += losses[5].item()
+    LOSS_GL_D_TEST += losses[6].item()
 
 print("\nTEST:")
 print(f"LOSS RECON: {LOSS_RECON_TEST}")
-print(f"LOSS KL: {LOSS_KL_TEST}")
+print(f"LOSS KL (COMM): {LOSS_KL_COMM_TEST}")
+print(f"LOSS KL (DIFF): {LOSS_KL_DIFF_TEST}")
 print(f"LOSS MMD (COMM): {LOSS_MMD_COMM_TEST}")
 print(f"LOSS MMD (DIFF): {LOSS_MMD_DIFF_TEST}")
 print(f"LOSS CLASS: {LOSS_CLASS_TEST}")
-print(f"LOSS CONTR: {LOSS_CONTR_TEST}")
-print(f"LOSS TC: {LOSS_TC_TEST}")
 print(f"LOSS GL D: {LOSS_GL_D_TEST}")
 
 loss_df = pd.concat([loss_df, pd.DataFrame.from_dict({"loss recon (train)": [LOSS_RECON_TRAIN], "loss recon (test)": [LOSS_RECON_TEST], \
-    "loss kl (train)": [LOSS_KL_TRAIN], "loss kl (test)": [LOSS_KL_TEST], "loss mmd (train)": [LOSS_MMD_COMM_TRAIN + LOSS_MMD_DIFF_TRAIN], \
+    "loss kl (train)": [LOSS_KL_COMM_TRAIN + LOSS_KL_DIFF_TRAIN], "loss kl (test)": [LOSS_KL_COMM_TEST + LOSS_KL_DIFF_TEST], "loss mmd (train)": [LOSS_MMD_COMM_TRAIN + LOSS_MMD_DIFF_TRAIN], \
         "loss mmd (test)": [LOSS_MMD_COMM_TEST + LOSS_MMD_DIFF_TEST], "loss classi (train)": [LOSS_CLASS_TRAIN], "loss classi (test)": [LOSS_CLASS_TEST],\
-            "loss tc (train)": [LOSS_TC_TRAIN], "loss tc (test)": [LOSS_TC_TEST], "test": ["out of sample"], "dataset": [f"2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}"]})], 
+          "test": ["out of sample"], "dataset": [f"2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}"]})], 
             ignore_index = True)
 # In[]
 loss_df.to_csv(result_dir + "loss_df.csv")
@@ -611,8 +591,8 @@ utils.plot_latent(zs = z_ds_umap[1], annos = meta_cells["condition 2"].values.sq
 
 
 # In[]
-loss_is = pd.DataFrame(columns = ["loss recon", "loss kl", "loss mmd", "loss class", "loss tc", "test"])
-loss_oos = pd.DataFrame(columns = ["loss recon", "loss kl", "loss mmd", "loss class", "loss tc", "test"])
+loss_is = pd.DataFrame(columns = ["loss recon", "loss kl", "loss mmd", "loss class", "test"])
+loss_oos = pd.DataFrame(columns = ["loss recon", "loss kl", "loss mmd", "loss class", "test"])
 
 # totally 9 datasets
 for ndiff_genes in [20, 50, 100]:
@@ -624,7 +604,6 @@ for ndiff_genes in [20, 50, 100]:
                                                               "loss kl": [loss.loc[0, "loss kl (train)"], loss.loc[0, "loss kl (test)"]],
                                                               "loss mmd":[loss.loc[0, "loss mmd (train)"], loss.loc[0, "loss mmd (test)"]],
                                                               "loss class":[loss.loc[0, "loss classi (train)"], loss.loc[0, "loss classi (test)"]],
-                                                              "loss tc":[loss.loc[0, "loss tc (train)"], loss.loc[0, "loss tc (test)"]],
                                                               "test": ["Train", "Test"]
                                                               })], axis = 0, ignore_index = True)
 
@@ -632,7 +611,6 @@ for ndiff_genes in [20, 50, 100]:
                                                               "loss kl": [loss.loc[1, "loss kl (train)"], loss.loc[1, "loss kl (test)"]],
                                                               "loss mmd":[loss.loc[1, "loss mmd (train)"], loss.loc[1, "loss mmd (test)"]],
                                                               "loss class":[loss.loc[1, "loss classi (train)"], loss.loc[1, "loss classi (test)"]],
-                                                              "loss tc":[loss.loc[1, "loss tc (train)"], loss.loc[1, "loss tc (test)"]],
                                                               "test": ["Train", "Test"]
                                                               })], axis = 0, ignore_index = True)
 
@@ -642,9 +620,9 @@ plt.rcParams["font.size"] = 20
 fig = plt.figure(figsize = (12,5))
 ax = fig.subplots(nrows = 1, ncols = 2)
 loss = pd.DataFrame()
-loss["value"] = np.concatenate([loss_is.loc[:, "loss recon"].values, loss_is.loc[:, "loss kl"].values, loss_is.loc[:, "loss mmd"].values, loss_is.loc[:, "loss class"].values, loss_is.loc[:, "loss tc"].values])
-loss["test"] = np.concatenate([loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values])
-loss["loss"] = ["loss recon"] * loss_is.shape[0] + ["loss kl"] * loss_is.shape[0] + ["loss mmd"] * loss_is.shape[0] + ["loss class"] * loss_is.shape[0] + ["loss tc"] * loss_is.shape[0]
+loss["value"] = np.concatenate([loss_is.loc[:, "loss recon"].values, loss_is.loc[:, "loss kl"].values, loss_is.loc[:, "loss mmd"].values, loss_is.loc[:, "loss class"].values])
+loss["test"] = np.concatenate([loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values])
+loss["loss"] = ["loss recon"] * loss_is.shape[0] + ["loss kl"] * loss_is.shape[0] + ["loss mmd"] * loss_is.shape[0] + ["loss class"] * loss_is.shape[0]
 
 sns.barplot(loss, hue = "test", x = "loss", y = "value", ax = ax[0], capsize = 0.1)
 handles, labels = ax[0].get_legend_handles_labels()
@@ -652,9 +630,9 @@ sns.stripplot(data = loss, hue = "test", x = "loss", y = "value", ax = ax[0], co
 print(loss)
 
 loss = pd.DataFrame()
-loss["value"] = np.concatenate([loss_oos.loc[:, "loss recon"].values, loss_is.loc[:, "loss kl"].values, loss_is.loc[:, "loss mmd"].values, loss_is.loc[:, "loss class"].values, loss_is.loc[:, "loss tc"].values])
-loss["test"] = np.concatenate([loss_oos.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values])
-loss["loss"] = ["loss recon"] * loss_oos.shape[0] + ["loss kl"] * loss_is.shape[0] + ["loss mmd"] * loss_is.shape[0] + ["loss class"] * loss_is.shape[0] + ["loss tc"] * loss_is.shape[0]
+loss["value"] = np.concatenate([loss_oos.loc[:, "loss recon"].values, loss_is.loc[:, "loss kl"].values, loss_is.loc[:, "loss mmd"].values, loss_is.loc[:, "loss class"].values])
+loss["test"] = np.concatenate([loss_oos.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values, loss_is.loc[:, "test"].values])
+loss["loss"] = ["loss recon"] * loss_oos.shape[0] + ["loss kl"] * loss_is.shape[0] + ["loss mmd"] * loss_is.shape[0] + ["loss class"] * loss_is.shape[0]
 
 print(loss)
 sns.barplot(loss, hue = "test", x = "loss", y = "value", ax = ax[1], capsize = 0.1)
@@ -672,8 +650,8 @@ ax[1].set_xlabel(None)
 ax[0].set_ylabel("Loss")
 ax[1].set_ylabel("Loss")
 
-ax[0].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$", "$\ell_{tc}$"])
-ax[1].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$", "$\ell_{tc}$"])
+ax[0].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$"])
+ax[1].set_xticklabels(["$\ell_{recon}$", "$\ell_{kl}$", "$\ell_{mmd}$", "$\ell_{class}$"])
 fig.tight_layout()
 
 # TODO: make certain

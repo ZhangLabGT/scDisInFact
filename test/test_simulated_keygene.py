@@ -34,14 +34,12 @@ def show_values_on_bars(axs):
 
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-# loss_kl explode, 1e-5 is too large
-reg_kl = 1e-5
-reg_contr = 0.01
+reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
 Ks = [8, 4, 4]
 
 batch_size = 64
@@ -57,25 +55,6 @@ data_dir = f"../data/simulated/unif/"
 plt.rcParams["font.size"] = 20
 
 simulated_lists = [
-#  '1condition_10000_500_0.4_20_1',
-#  '1condition_10000_500_0.4_20_2',
-#  '1condition_10000_500_0.4_20_4',
-#  '1condition_10000_500_0.4_50_1',
-#  '1condition_10000_500_0.4_50_2',
-#  '1condition_10000_500_0.4_50_4',
-#  '1condition_10000_500_0.4_100_1',
-#  '1condition_10000_500_0.4_100_2',
-#  '1condition_10000_500_0.4_100_4'  
-#  '1condition_10000_500_0.2_20_2'
-#   "2conds_base_10000_500_0.4_20_1",
-#   "2conds_base_10000_500_0.4_20_2",
-#   "2conds_base_10000_500_0.4_20_4",
-#   "2conds_base_10000_500_0.4_50_1",
-#   "2conds_base_10000_500_0.4_50_2",
-#   "2conds_base_10000_500_0.4_50_4",
-#   "2conds_base_10000_500_0.4_100_1",
-#   "2conds_base_10000_500_0.4_100_2",
-#   "2conds_base_10000_500_0.4_100_4",
   "2conds_base_10000_500_0.4_20_2",
   "2conds_base_10000_500_0.4_20_4",
   "2conds_base_10000_500_0.4_20_8",
@@ -93,7 +72,7 @@ for dataset_dir in simulated_lists:
     ndiff_genes = eval(dataset_dir.split("_")[5])
     ndiff = eval(dataset_dir.split("_")[6])
     result_dir = './results_simulated/disentangle/unif/' + dataset_dir + "/"
-    model_params = torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+    model_params = torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 
     # --------------------------------------------------------------------------------------------
     #
@@ -106,13 +85,14 @@ for dataset_dir in simulated_lists:
     gt[:,ndiff_genes:(2*ndiff_genes)] = 1
     # gt[:,:ndiff_genes] = 1
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(inf, gt), 
-                                    "AUPRC ratio": bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes),
-                                    "method": "scDisInFact",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(inf, gt)], 
+                                    "AUPRC ratio": [bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["scDisInFact"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
     
     # scinsight
     result_scinsight = './results_simulated/scinsight/'+dataset_dir + "/scinsight_ctrl_stim/"
@@ -128,14 +108,15 @@ for dataset_dir in simulated_lists:
     # normalize
     H_var = H_var/np.max(H_var)
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(H_var, gt),
-                                    "AUPRC ratio": bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes),
-                                    "method": "scINSIGHT",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)    
-
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(H_var, gt)],
+                                    "AUPRC ratio": [bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["scINSIGHT"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
+    
     # wilcoxon baseline
     counts = np.loadtxt(data_dir + dataset_dir + "/scinsight/counts.txt")
     meta = pd.read_csv(data_dir + dataset_dir + "/scinsight/meta.csv", index_col = 0)
@@ -149,13 +130,14 @@ for dataset_dir in simulated_lists:
     # scale to 0-1
     score_wilcoxon = 1 - pvals/np.max(pvals)
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(score_wilcoxon, gt),
-                                    "AUPRC ratio": bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes),
-                                    "method": "Wilcoxon",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(score_wilcoxon, gt)],
+                                    "AUPRC ratio": [bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["Wilcoxon"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
 
 
 
@@ -169,13 +151,14 @@ for dataset_dir in simulated_lists:
     gt = np.zeros((1, ngenes))
     gt[:,:ndiff_genes] = 1
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(inf, gt), 
-                                    "AUPRC ratio": bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes),
-                                    "method": "scDisInFact",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(inf, gt)], 
+                                    "AUPRC ratio": [bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["scDisInFact"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
     
     # scinsight
     result_scinsight = './results_simulated/scinsight/'+dataset_dir + "/scinsight_healthy_severe/"
@@ -191,13 +174,14 @@ for dataset_dir in simulated_lists:
     # normalize
     H_var = H_var/np.max(H_var)
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(H_var, gt),
-                                    "AUPRC ratio": bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes),
-                                    "method": "scINSIGHT",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)    
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(H_var, gt)],
+                                    "AUPRC ratio": [bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["scINSIGHT"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
 
     # wilcoxon baseline
     counts = np.loadtxt(data_dir + dataset_dir + "/scinsight/counts.txt")
@@ -213,13 +197,14 @@ for dataset_dir in simulated_lists:
     # scale to 0-1
     score_wilcoxon = 1 - pvals/np.max(pvals)
 
-    auprc_dict = auprc_dict.append({"dataset": dataset_dir, 
-                                    "ndiff_genes": ndiff_genes, 
-                                    "AUPRC": bmk.compute_auprc(score_wilcoxon, gt),
-                                    "AUPRC ratio": bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes),
-                                    "method": "Wilcoxon",
-                                    "ndiff": ndiff
-                                    }, ignore_index = True)
+    auprc_dict = pd.concat([auprc_dict,
+                            pd.DataFrame.from_dict({"dataset": [dataset_dir], 
+                                    "ndiff_genes": [ndiff_genes], 
+                                    "AUPRC": [bmk.compute_auprc(score_wilcoxon, gt)],
+                                    "AUPRC ratio": [bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes)],
+                                    "method": ["Wilcoxon"],
+                                    "ndiff": [ndiff]
+                                    })], axis = 0, ignore_index = True)
 
 
 # # In[]

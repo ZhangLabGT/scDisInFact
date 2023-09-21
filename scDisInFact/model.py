@@ -4,6 +4,7 @@ import numpy as np
 import torch.optim as opt
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import Module, Parameter, ParameterDict
 from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.preprocessing import StandardScaler
 from torch.autograd import Variable
@@ -231,8 +232,8 @@ class scdisinfact(nn.Module):
                                 reg_kl = 1e-6, reg_class = 1, seed = 0, device = torch.device("cuda:0"))
     >>> model.train_model(nepochs = 100, recon_loss = "NB", reg_contr = 0.01)
     """
-    def __init__(self, data_dict, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, reg_tc = 0.5, 
-                 reg_kl = 1e-5, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, enc_injection = True, device = device):
+    def __init__(self, data_dict, reg_mmd_comm = 1e-4, reg_mmd_diff = 1e-4, reg_gl = 1, reg_class = 1, 
+                 reg_kl_comm = 1e-5, reg_kl_diff = 1e-2, Ks = [8, 4], batch_size = 64, interval = 10, lr = 5e-4, seed = 0, enc_injection = False, device = device):
         super().__init__()
         # initialize the parameters
         self.Ks = {"common_factor": Ks[0], "diff_factors": Ks[1:]}
@@ -245,7 +246,7 @@ class scdisinfact(nn.Module):
         # learning rate
         self.lr = lr
         # regularization parameters
-        self.lambs = {"mmd_comm": reg_mmd_comm, "mmd_diff": reg_mmd_diff, "class": reg_class, "tc": reg_tc, "gl": reg_gl, "kl": reg_kl}
+        self.lambs = {"mmd_comm": reg_mmd_comm, "mmd_diff": reg_mmd_diff, "class": reg_class, "gl": reg_gl, "kl_comm": reg_kl_comm, "kl_diff": reg_kl_diff}
         # random seed
         self.seed = seed
         # device 
@@ -284,7 +285,6 @@ class scdisinfact(nn.Module):
             # subsampling the test dataset when the dataset is too large
             cutoff = 100
             if len(dataset) > cutoff:
-                print("test dataset shrink to {:d}".format(cutoff))
                 samples = torch.randperm(n = cutoff)[:cutoff]
                 test_dataset = Subset(dataset, samples)
             else:
@@ -314,13 +314,16 @@ class scdisinfact(nn.Module):
         # NOTE: classify the time point, out dim = number of unique time points, currently use only time dimensions as input, update the last layer to be linear
         # use a linear classifier as stated in the paper
         self.classifiers = nn.ModuleList([])
-        for diff_factor in range(self.n_diff_factors):
-            self.classifiers.append(nn.Linear(self.Ks["diff_factors"][diff_factor], len(self.uniq_diff_labels[diff_factor])).to(self.device))
-        # NOTE: reconstruct the original data, use all latent dimensions as input
-        self.Dec = base_model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.2, use_batch_norm = False).to(self.device)
-        # Discriminator for factor vae
-        self.disc = base_model.FCLayers(n_in=self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_out=2, n_cat_list=None, n_layers=3, n_hidden=2, dropout_rate=0.2, use_batch_norm = False).to(self.device)
+        self.diff_prior_means = nn.ParameterList([])
+        self.diff_prior_logvars = nn.ParameterList([])
         
+        for diff_factor in range(self.n_diff_factors):
+            self.diff_prior_means.append(nn.Parameter(torch.rand((len(self.uniq_diff_labels[diff_factor]), self.Ks["diff_factors"][diff_factor]), device = self.device)))
+            self.diff_prior_logvars.append(nn.Parameter(torch.rand((len(self.uniq_diff_labels[diff_factor]), self.Ks["diff_factors"][diff_factor]), device = self.device)))
+            self.classifiers.append(nn.Linear(self.Ks["diff_factors"][diff_factor], len(self.uniq_diff_labels[diff_factor])).to(self.device))
+
+        # NOTE: reconstruct the original data, use all latent dimensions as input
+        self.Dec = base_model.Decoder(n_input = self.Ks["common_factor"] + sum(self.Ks["diff_factors"]), n_output = self.ngenes, n_cat_list = [len(self.uniq_batch_ids)], n_layers = 2, n_hidden = 128, dropout_rate = 0.2, use_batch_norm = False).to(self.device)        
         self.opt = opt.Adam(self.parameters(), lr = self.lr)
 
 
@@ -405,18 +408,7 @@ class scdisinfact(nn.Module):
         for diff_factor in range(self.n_diff_factors):
             z_pred.append(self.classifiers[diff_factor](z_d[diff_factor]))
 
-        # discriminator
-        # create original samples
-        orig_samples = torch.cat([z_c] + z_d, dim = 1)
-        # create permuted samples
-        perm_idx = []
-        for diff_factor in range(self.n_diff_factors):
-            perm_idx.append(torch.randperm(n = orig_samples.shape[0]))
-        perm_samples = torch.cat([z_c] + [x[perm_idx[i], :] for i, x in enumerate(z_d)], dim = 1)
-        # pass through discriminator
-        y_orig = self.disc(orig_samples)
-        y_perm = self.disc(perm_samples)     
-        return {"mu": mu, "pi": pi, "theta": theta, "z_pred": z_pred, "y_orig": y_orig, "y_perm": y_perm}
+        return {"mu": mu, "pi": pi, "theta": theta, "z_pred": z_pred}
     
     def loss(self, dict_inf, dict_gen, size_factor, count, batch_id, diff_labels, recon_loss):
         """\
@@ -426,7 +418,6 @@ class scdisinfact(nn.Module):
           
         """
         ce_loss = nn.CrossEntropyLoss(reduction = 'mean')
-        contr_loss = loss_func.CircleLoss(m=0.25, gamma=80)
 
         # 1.reconstruction loss
         if recon_loss == "ZINB":
@@ -442,32 +433,30 @@ class scdisinfact(nn.Module):
 
         # 2.kl divergence
         # average instead of sum across data within a batch
-        loss_kl = torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_c"] - dict_inf["mu_c"] ** 2 - dict_inf["logvar_c"].exp(), dim = 1), dim = 0)
+        loss_kl_comm = torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_c"] - dict_inf["mu_c"] ** 2 - dict_inf["logvar_c"].exp(), dim = 1), dim = 0)
+        loss_kl_diff = 0
         for diff_factor in range(self.n_diff_factors):
-            # loss_kl += torch.sum(dict_inf["mu_d"][diff_factor].pow(2).add_(dict_inf["logvar_d"][diff_factor].exp()).mul_(-1).add_(1).add_(dict_inf["logvar_d"][diff_factor])).mul_(-0.5)
-            loss_kl += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - dict_inf["mu_d"][diff_factor] ** 2 - dict_inf["logvar_d"][diff_factor].exp(), dim = 1), dim = 0)    
+            loss_kl_diff += torch.mean(-0.5 * torch.sum(1 + dict_inf["logvar_d"][diff_factor] - self.diff_prior_logvars[diff_factor][diff_labels[diff_factor],:] - (dict_inf["logvar_d"][diff_factor].exp() + (dict_inf["mu_d"][diff_factor] - self.diff_prior_means[diff_factor][diff_labels[diff_factor], :]) ** 2)/self.diff_prior_logvars[diff_factor][diff_labels[diff_factor],:].exp(), dim = 1), dim = 0)    
 
-        # 3.MMD loss
+        # 4.classifier loss and contr loss
+        loss_class = 0
+        for diff_factor in range(self.n_diff_factors):
+            loss_class += ce_loss(input = dict_gen["z_pred"][diff_factor], target = diff_labels[diff_factor])
+
+        # 3.MMD loss. NOTE: the batch ID is the MMD-batch combination
         # common mmd loss
         loss_mmd_comm = loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_c"], batch_ids = batch_id, device = self.device)
         # condition specific mmd loss
         loss_mmd_diff = 0
+        # loop through all unshared factors
         for diff_factor in range(self.n_diff_factors):
+            # loop through all condition label for each factor, MMD is applied separately for each condition label
             for diff_label in self.uniq_diff_labels[diff_factor]:
                 idx = diff_labels[diff_factor] == diff_label
                 if any(idx):
                     loss_mmd_diff += loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_d"][diff_factor][idx, :], batch_ids = batch_id[idx], device = self.device)
                 else:
                     loss_mmd_diff += 0
-        # 4.classifier loss and contr loss
-        loss_class = 0
-        loss_contr = 0
-        for diff_factor in range(self.n_diff_factors):
-            loss_class += ce_loss(input = dict_gen["z_pred"][diff_factor], target = diff_labels[diff_factor])
-            loss_contr += contr_loss(F.normalize(dict_inf["z_d"][diff_factor]), diff_labels[diff_factor])
-        
-        # 5.total correlation
-        loss_tc = ce_loss(input = torch.cat([dict_gen["y_orig"], dict_gen["y_perm"]], dim = 0), target =torch.tensor([0] * dict_gen["y_orig"].shape[0] + [1] * dict_gen["y_perm"].shape[0], device = self.device))
 
         # 6.group lasso
         loss_gl_d = 0
@@ -475,10 +464,10 @@ class scdisinfact(nn.Module):
             # TODO: decide on alpha
             loss_gl_d += loss_func.grouplasso(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight, alpha = 0.1)
 
-        return loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d
+        return loss_recon, loss_kl_comm, loss_kl_diff, loss_mmd_comm, loss_mmd_diff, loss_class, loss_gl_d
 
 
-    def train_model(self, nepochs = 50, recon_loss = "NB", reg_contr = 0.01):
+    def train_model(self, nepochs = 50, recon_loss = "NB"):
         """\
         Decription:
         -------------
@@ -500,13 +489,12 @@ class scdisinfact(nn.Module):
 
         loss_tests = []
         loss_recon_tests = []
-        loss_kl_tests = []
+        loss_kl_comm_tests = []
+        loss_kl_diff_tests = []
         loss_mmd_comm_tests = []
         loss_mmd_diff_tests = []
         loss_class_tests = []
         loss_gl_d_tests = []
-        loss_gl_c_tests = []
-        loss_tc_tests = []
 
         for epoch in range(nepochs + 1):
             for data_batch in zip(*self.train_loaders):
@@ -537,14 +525,12 @@ class scdisinfact(nn.Module):
                     diff_labels[diff_factor] = torch.cat(diff_labels[diff_factor], dim = 0).to(self.device, non_blocking=True)
 
                 # 1. 
-                # freeze the gradient of diff_encoders, classifiers, and discriminators
+                # freeze the gradient of diff_encoders, classifiers
                 for diff_factor in range(self.n_diff_factors):
                     for x in self.Enc_ds[diff_factor].parameters():
                         x.requires_grad = False
                     for x in self.classifiers[diff_factor].parameters():
                         x.requires_grad = False
-                for x in self.disc.parameters():
-                    x.requires_grad = False
                 # activate the common encoder, decoder
                 for x in self.Enc_c.parameters():
                     x.requires_grad = True
@@ -555,25 +541,18 @@ class scdisinfact(nn.Module):
                 dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
                 # pass through the decoder
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
-
-                loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
+                loss_recon, loss_kl_comm, loss_kl_diff, loss_mmd_comm, loss_mmd_diff, loss_class, loss_gl_d = self.loss(dict_inf = dict_inf, \
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
-                loss = loss_recon + self.lambs["mmd_comm"] * loss_mmd_comm + self.lambs["kl"] * loss_kl
-                # print("\nstep1")
-                # print(loss_recon)
-                # print(self.lambs["mmd_comm"] * loss_mmd_comm)
-                # print(self.lambs["kl"] * loss_kl)
-                # print()
-
+                loss = loss_recon + self.lambs["mmd_comm"] * loss_mmd_comm + self.lambs["kl_comm"] * loss_kl_comm
                 loss.backward()
                 # clip the gradient to prevent exploding
-                nn.utils.clip_grad_norm_(self.parameters(), 1)
+                # nn.utils.clip_grad_norm_(self.parameters(), 1)
                 self.opt.step()
                 self.opt.zero_grad()
 
                 # 2. 
-                # activate the gradient of diff_encoders, classifiers, and discriminators
+                # activate the gradient of diff_encoders, classifiers
                 for diff_factor in range(self.n_diff_factors):
                     for x in self.Enc_ds[diff_factor].parameters():
                         x.requires_grad = True
@@ -581,8 +560,6 @@ class scdisinfact(nn.Module):
                         x.requires_grad = True
                 # freeze the common encoder and disciminators
                 for x in self.Enc_c.parameters():
-                    x.requires_grad = False
-                for x in self.disc.parameters():
                     x.requires_grad = False
                 # activate the decoder
                 for x in self.Dec.parameters():
@@ -593,60 +570,15 @@ class scdisinfact(nn.Module):
                 # pass through the decoder
                 dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
-                loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
+                loss_recon, loss_kl_comm, loss_kl_diff, loss_mmd_comm, loss_mmd_diff, loss_class, loss_gl_d = self.loss(dict_inf = dict_inf, \
                     dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
-
-                loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * (loss_class + reg_contr * loss_contr) + self.lambs["kl"] * loss_kl + self.lambs["gl"] * loss_gl_d + self.lambs["tc"] * loss_tc
-                # print("\nstep2")
-                # print(loss_recon)
-                # print(self.lambs["mmd_diff"] * loss_mmd_diff)
-                # print(self.lambs["kl"] * loss_kl)
-                # print(self.lambs["class"] * loss_class)
-                # print(self.lambs["class"] * reg_contr * loss_contr)
-                # print(self.lambs["gl"] * loss_gl_d)
-                # print(self.lambs["tc"] * loss_tc)
-                # print()
-
+                
+                loss = loss_recon + self.lambs["mmd_diff"] * loss_mmd_diff + self.lambs["class"] * loss_class + self.lambs["kl_diff"] * loss_kl_diff + self.lambs["gl"] * loss_gl_d 
                 loss.backward()
                 # clip the gradient to prevent exploding
-                nn.utils.clip_grad_norm_(self.parameters(), 1)
+                # nn.utils.clip_grad_norm_(self.parameters(), 1)
                 self.opt.step()
                 self.opt.zero_grad()
-
-
-                # 3. 
-                # activate the gradient of discriminators, freeze all remaining
-                for diff_factor in range(self.n_diff_factors):
-                    for x in self.Enc_ds[diff_factor].parameters():
-                        x.requires_grad = False
-                    for x in self.classifiers[diff_factor].parameters():
-                        x.requires_grad = False
-                for x in self.Enc_c.parameters():
-                    x.requires_grad = False
-                for x in self.disc.parameters():
-                    x.requires_grad = True
-                # freeze the decoder                
-                for x in self.Dec.parameters():
-                    x.requires_grad = False
-
-                # pass through the encoders
-                dict_inf = self.inference(counts = counts_norm, batch_ids = batch_id, print_stat = False, clamp_comm = clamp_comm, clamp_diff = clamp_diff)
-                # pass through the decoder
-                dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
-
-                loss_recon, loss_kl, loss_mmd_comm, loss_mmd_diff, loss_class, loss_contr, loss_tc, loss_gl_d = self.loss(dict_inf = dict_inf, \
-                    dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
-
-                loss = self.lambs["tc"] * loss_tc
-                # print("\nstep3")
-                # print(self.lambs["tc"] * loss_tc)
-                # print()
-
-                loss.backward()
-                # clip the gradient to prevent exploding
-                nn.utils.clip_grad_norm_(self.parameters(), 1)
-                self.opt.step()
-                self.opt.zero_grad()    
 
             # TEST
             if epoch % self.interval == 0:   
@@ -684,23 +616,22 @@ class scdisinfact(nn.Module):
                         # pass through the decoder
                         dict_gen = self.generative(z_c = dict_inf["z_c"], z_d = dict_inf["z_d"], batch_ids = batch_id)
 
-                        loss_recon_test, loss_kl_test, loss_mmd_comm_test, loss_mmd_diff_test, loss_class_test, loss_contr_test, loss_tc_test, loss_gl_d_test = self.loss(dict_inf = dict_inf, \
+                        loss_recon_test, loss_kl_comm_test, loss_kl_diff_test, loss_mmd_comm_test, loss_mmd_diff_test, loss_class_test, loss_gl_d_test = self.loss(dict_inf = dict_inf, \
                             dict_gen = dict_gen, size_factor = size_factor, count = count, batch_id = mmd_batch_id, diff_labels = diff_labels, recon_loss = recon_loss)
 
                         # total loss
-                        loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * (loss_class_test + reg_contr * loss_contr_test) \
-                            + self.lambs["gl"] * loss_gl_d_test + self.lambs["kl"] * loss_kl_test + self.lambs["tc"] * loss_tc_test
-                  
+                        loss_test = loss_recon_test + self.lambs["mmd_comm"] * loss_mmd_comm_test + self.lambs["mmd_diff"] * loss_mmd_diff_test + self.lambs["class"] * loss_class_test \
+                            + self.lambs["gl"] * loss_gl_d_test + self.lambs["kl_comm"] * loss_kl_comm_test + self.lambs["kl_diff"] * loss_kl_diff_test
+                                          
                         print('Epoch {}, Validating Loss: {:.4f}'.format(epoch, loss_test.item()))
                         info = [
                             'loss reconstruction: {:.5f}'.format(loss_recon_test.item()),
-                            'loss kl: {:.5f}'.format(loss_kl_test.item()),
+                            'loss kl comm: {:.5f}'.format(loss_kl_comm_test.item()),
+                            'loss kl diff: {:.5f}'.format(loss_kl_diff_test.item()),
                             'loss mmd common: {:.5f}'.format(loss_mmd_comm_test.item()),
                             'loss mmd diff: {:.5f}'.format(loss_mmd_diff_test.item()),
                             'loss classification: {:.5f}'.format(loss_class_test.item()),
-                            'loss contrastive: {:.5f}'.format(loss_contr_test.item()),
                             'loss group lasso diff: {:.5f}'.format(loss_gl_d_test.item()), 
-                            'loss total correlation (disc): {:.5f}'.format(loss_tc_test.item())
                         ]
                         for i in info:
                             print("\t", i)       
@@ -709,12 +640,12 @@ class scdisinfact(nn.Module):
 
                         loss_tests.append(loss_test.item())
                         loss_recon_tests.append(loss_recon_test.item())
+                        loss_kl_comm_tests.append(loss_kl_comm_test.item())
+                        loss_kl_diff_tests.append(loss_kl_diff_test.item())
                         loss_mmd_comm_tests.append(loss_mmd_comm_test.item())
                         loss_mmd_diff_tests.append(loss_mmd_diff_test.item())
                         loss_class_tests.append(loss_class_test.item())
-                        loss_kl_tests.append(loss_kl_test.item())
                         loss_gl_d_tests.append(loss_gl_d_test.item())
-                        loss_tc_tests.append(loss_tc_test.item())        
 
                         # # update for early stopping 
                         # if loss_test.item() < best_loss:
@@ -735,7 +666,7 @@ class scdisinfact(nn.Module):
                         #             trigger = 0                            
 
         self.eval()                
-        return loss_tests, loss_recon_tests, loss_kl_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests, loss_gl_c_tests, loss_tc_tests
+        return loss_tests, loss_recon_tests, loss_kl_comm_test, loss_kl_diff_test, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests
 
 
     def predict_counts(self, input_counts, meta_cells, condition_keys, batch_key, predict_conds = None, predict_batch = None):
@@ -867,134 +798,3 @@ class scdisinfact(nn.Module):
             scores.append(self.Enc_ds[diff_factor].fc.fc_layers[0][0].weight.detach().cpu().pow(2).sum(dim=0).add(1e-8).pow(1/2.)[:self.ngenes].numpy())
         
         return scores
-
-
-
-    # def predict_counts_optrans(self, input_counts, meta_cells, condition_keys, batch_key, predict_conds = None, predict_batch = None):
-    #     """\
-    #     Description:
-    #     -------------
-    #         Function for condition effect prediction.
-
-    #     Parameters:
-    #     -------------
-    #         input_counts:
-    #             the input count matrix, of the shape (ncells, ngenes), of the type np.array()
-
-    #         meta_cells:
-    #             the meta cell data frame of input count matrix
-            
-    #         condition_keys:
-    #             the list of columns of the meta_cell data frame that correspond to the conditions
-            
-    #         batch_key:
-    #             the column of the meta_cell data frame that correspond to the batches
-
-    #         predict_conds:
-    #             the condition label of the predicted dataset, 
-    #             predict_conds should have length equal to the number of condition type, 
-    #             and should have one condition group id for each condition type,
-    #             default None, where the condition is kept the same as predict_dataset
-
-    #         predict_batch:
-    #             the batch id of the predicted dataset, default None, where batch_ids is kept the same as predict_dataset
-
-    #     Returns:
-    #     -------------
-    #         predicted counts
-        
-    #     """
-    #     # number of condition types should match
-    #     # assert len(self.uniq_diff_labels) == len(predict_conds)        
-    #     # assert len(self.uniq_diff_labels) == len(condition_keys)
-    #     # process the current condition labels
-    #     curr_conds = []
-    #     for idx, condition_key in enumerate(condition_keys):
-    #         curr_cond = np.zeros(meta_cells.shape[0])
-    #         for condition_id, condition in enumerate(self.data_dict["matching_dict"]["cond_names"][idx]):
-    #             curr_cond[meta_cells[condition_key].values.squeeze() == condition] = condition_id
-    #         curr_conds.append(curr_cond)
-        
-    #     # process the predict condition label
-    #     if predict_conds is not None:
-    #         for idx, condition in enumerate(predict_conds):
-    #             predict_conds[idx] = np.array([np.where(self.data_dict["matching_dict"]["cond_names"][idx] == predict_conds[idx])[0][0]] * curr_conds[idx].shape[0])
-
-    #     # process the batch labels
-    #     curr_batch = torch.zeros(meta_cells.shape[0])
-    #     for batch_id, batch in enumerate(self.data_dict["matching_dict"]["batch_name"]):
-    #         curr_batch[meta_cells[batch_key].values.squeeze() == batch] = batch_id
-        
-    #     # process the input count matrix
-    #     size_factor = np.tile(np.sum(input_counts, axis = 1, keepdims = True), (1, input_counts.shape[1]))/100
-    #     counts_norm = np.log1p(input_counts/size_factor)
-    #     # further standardize the count
-    #     counts_norm = torch.FloatTensor(self.data_dict["scaler"].transform(counts_norm))
-
-    #     # pass through training data to obtain delta
-    #     with torch.no_grad():
-    #         diff_labels = [[] for x in range(self.n_diff_factors)]
-    #         z_ds_train = [[] for x in range(self.n_diff_factors)]
-
-    #         for dataset in self.data_dict["datasets"]:
-    #             # infer latent factor on train dataset
-    #             dict_inf_train = self.inference(counts = dataset.counts_norm.to(self.device), batch_ids = dataset.batch_id[:,None].to(self.device), print_stat = True)
-    #             # extract unshared-bio factors
-    #             z_d = dict_inf_train["mu_d"]                
-    #             for diff_factor, diff_label in enumerate(dataset.diff_labels):
-    #                 # append condition label
-    #                 diff_labels[diff_factor].extend([x for x in diff_label])
-    #                 # append unshared-bio factor
-    #                 z_ds_train[diff_factor].append(z_d[diff_factor])
-
-    #         # pass through predicting data for prediction
-    #         dic_inf_pred = self.inference(counts = counts_norm.to(self.device), batch_ids = curr_batch[:, None].to(self.device), print_stat = True)
-    #         z_ds_pred = dic_inf_pred["mu_d"]
-
-    #         diff_labels = [np.array(x) for x in diff_labels]
-    #         z_ds_train = [torch.concat(x, dim = 0) for x in z_ds_train]   
-
-    #         # store the centroid z_ds for each condition groups
-    #         if predict_conds is not None:
-    #             for diff_factor in range(self.n_diff_factors):
-    #                 # optimal transport
-    #                 pred_distri = []
-    #                 for cond in np.unique(predict_conds[diff_factor]):
-    #                     pred_distri.append(z_ds_train[diff_factor][diff_labels[diff_factor] == cond,:].detach().cpu().numpy())
-    #                 pred_distri = np.concatenate(pred_distri, axis = 0)                   
-
-    #                 # curr_distri = []
-    #                 # for cond in np.unique(curr_conds[diff_factor]):
-    #                 #     curr_distri.append(z_ds_train[diff_factor][diff_labels[diff_factor] == cond,:].detach().cpu().numpy())
-    #                 # curr_distri = np.concatenate(curr_distri, axis = 0)
-                    
-    #                 curr_distri = z_ds_pred[diff_factor].detach().cpu().numpy()
-                    
-    #                 # randomly downsample to reduce calculation time
-    #                 np.random.seed(0)
-    #                 pred_distri_anchor = pred_distri[np.random.choice(pred_distri.shape[0], 1000, replace = False), :]
-    #                 curr_distri_anchor = curr_distri[np.random.choice(curr_distri.shape[0], 1000, replace = False), :]
-                    
-    #                 pdist_pred_anchor = pairwise_distances(pred_distri, pred_distri_anchor)
-    #                 pdist_curr_anchor = pairwise_distances(curr_distri, curr_distri_anchor)
-    #                 print(pred_distri.shape)
-    #                 print(curr_distri.shape)
-
-    #                 _, T = opt_trans.calc_trans(x1 = curr_distri_anchor, x2 = pred_distri_anchor, njobs = 1)
-    #                 delta_anchor = pred_distri_anchor[np.argmax(T, axis = 1),:] - curr_distri_anchor
-    #                 delta = delta_anchor[np.argmin(pdist_curr_anchor, axis = 1),:]                
-
-    #                 z_ds_pred[diff_factor] = z_ds_pred[diff_factor] + torch.FloatTensor(delta).to(self.device)
-
-    #         # generate data from the latent factors
-    #         if predict_batch is None:   
-    #             # predict_batch is kept the same         
-    #             dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = curr_batch[:,None].to(self.device))
-    #         else:
-    #             # predict_batch is given
-    #             predict_batch = torch.tensor([[np.where(self.data_dict["matching_dict"]["batch_name"] == predict_batch)[0][0]] for x in range(curr_batch.shape[0])], device = self.device)
-    #             dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_batch)
-
-    #     return dict_gen["mu"].detach().cpu().numpy(), z_ds_pred, pred_distri, curr_distri
- 
-

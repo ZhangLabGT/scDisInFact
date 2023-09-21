@@ -18,14 +18,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 from sklearn.metrics import r2_score 
 
 # In[]
 sigma = 0.4
 n_diff_genes = 100
-diff = 8
+diff = 4
 ngenes = 500
 ncells_total = 10000 
 n_batches = 2
@@ -111,13 +111,12 @@ import importlib
 importlib.reload(scdisinfact)
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-reg_kl = 1e-5
-reg_contr = 0.01
+reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
 Ks = [8, 4, 4]
 
 batch_size = 64
@@ -126,14 +125,13 @@ interval = 10
 lr = 5e-4
 
 model = scdisinfact.scdisinfact(data_dict = data_dict_full, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}.pth", map_location = device))
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
 _ = model.eval()
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}.pth")
+model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}.pth", map_location = device))
 
 # In[] Plot results
 # z_cs = []
@@ -777,16 +775,17 @@ for batch_id in range(n_batches):
 
 data_dict = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 
-model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 
 # train_joint is more efficient, but does not work as well compared to train
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_oos.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_oos.pth", map_location = device))
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
 _ = model.eval()
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_oos.pth")
+model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_oos.pth", map_location = device))
+
 
 # In[]
 print("# -------------------------------------------------------------------------------------------")
@@ -1300,6 +1299,9 @@ scores.to_csv(result_dir + f"scores_oos.csv")
 # Test 1
 #
 # -------------------------------------------------------------------------------------------------
+ngenes = 500
+ncells_total = 10000 
+sigma = 0.4
 scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction", "training", "MSE (ratio)", "Pearson (ratio)", "R2 (ratio)"])
 for n_diff_genes in [20, 50, 100]:
     for diff in [2, 4, 8]:

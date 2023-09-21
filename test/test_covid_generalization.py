@@ -49,7 +49,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/covid_integrated/"
-result_dir = "results_covid/dropout/"
+result_dir = "results_covid/newmodel/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 

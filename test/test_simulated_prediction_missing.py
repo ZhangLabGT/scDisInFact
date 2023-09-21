@@ -24,8 +24,8 @@ from sklearn.metrics import r2_score
 
 # In[]
 sigma = 0.4
-n_diff_genes = 20
-diff = 2
+n_diff_genes = 100
+diff = 8
 ngenes = 500
 ncells_total = 10000 
 n_batches = 2
@@ -110,7 +110,7 @@ counts_gt_test = []
 counts_test = []
 meta_cells = []
 # worst case: missing=4, one matrix for each condition
-missing = 1
+missing = 4
 for batch_id in range(n_batches):
     # generate permutation
     permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
@@ -267,13 +267,12 @@ import importlib
 importlib.reload(scdisinfact)
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-reg_kl = 1e-5
-reg_contr = 0.01
+reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
 Ks = [8, 4, 4]
 
 batch_size = 64
@@ -282,16 +281,17 @@ interval = 10
 lr = 5e-4
 
 
-model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = 64, interval = interval, lr = 5e-4, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
+model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 
 # train_joint is more efficient, but does not work as well compared to train
 model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{missing}.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{missing}.pth", map_location = device))
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
 _ = model.eval()
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{missing}.pth")
+model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{missing}.pth", map_location = device))
+
 
 # In[]
 # predict condition 1
@@ -617,6 +617,9 @@ scores = pd.concat([scores1, scores2, scores3, scores4], axis = 0)
 scores.to_csv(result_dir + f"scores_missing{missing}.csv")
 
 # In[]
+ngenes = 500
+ncells_total = 10000 
+sigma = 0.4
 scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction", "training", "MSE (ratio)", "Pearson (ratio)", "R2 (ratio)"])
 for n_diff_genes in [20, 50, 100]:
     for diff in [2, 4, 8]:

@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 import seaborn as sns
 from adjustText import adjust_text
 
-device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
 def show_values(axs, orient="v", space=.01):
     def _single(ax):
@@ -50,8 +50,7 @@ def show_values(axs, orient="v", space=.01):
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
 # result_dir = "results_GBM_treatment/Fig4_patient/"
-# result_dir = "results_GBM_treatment/Fig4_patient_gmmprior/"
-result_dir = "results_GBM_treatment/Fig4_patient_nogl/"
+result_dir = "results_GBM_treatment/Fig4_patient_new/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
@@ -94,34 +93,29 @@ utils.plot_latent(x_umap, annos = np.concatenate([x["mstatus"].values.squeeze() 
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-import importlib 
-importlib.reload(scdisinfact)
-
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 0
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-reg_kl = 1e-5
-reg_contr = 0.01
+reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
-Ks = [8, 4]
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
+Ks = [8, 2]
 
 batch_size = 64
-nepochs = 50
+nepochs = 100
 interval = 10
 lr = 5e-4
 
 model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = 0.01)
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
+# model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+# _ = model.eval()
+# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
-_ = model.eval()
 
 comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
 if not os.path.exists(result_dir + comment):
@@ -151,7 +145,7 @@ umap_op = UMAP(min_dist = 0.1, random_state = 0)
 pca_op = PCA(n_components = 2)
 z_cs_umap = umap_op.fit_transform(np.concatenate(z_cs, axis = 0))
 z_ds_umap = []
-z_ds_umap.append(umap_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
+z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 zs_umap = umap_op.fit_transform(np.concatenate(zs, axis = 0))
 
 np.save(file = result_dir + comment + "z_cs_umap.npy", arr = z_cs_umap)
@@ -176,9 +170,9 @@ utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["mstatus"].values.sq
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_mstatus.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
 
 utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "batches", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
+    mode = "batches", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_patient_id.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
 utils.plot_latent(zs = z_ds_umap[0], annos = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), batches = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
-    mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
+    mode = "annos", axis_label = "PCA", figsize = (10,7), save = (result_dir + comment+"diff_treatment.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small", legend = False)
 
 
 # In[]
@@ -350,12 +344,12 @@ scores_scinsight["Silhouette batch (condition & batches)"] = np.array([silhouett
 scores_scinsight["methods"] = np.array(["scINSIGHT"])
 
 scores = pd.concat([scores_scdisinfact, scores_scinsight], axis = 0)
-scores.to_csv(result_dir + "score_disentangle.csv")
+scores.to_csv(result_dir + comment + "score_disentangle.csv")
 
 # In[]
 from matplotlib.ticker import FormatStrFormatter
 plt.rcParams["font.size"] = 15
-scores = pd.read_csv(result_dir + "score_disentangle.csv", index_col = 0)
+scores = pd.read_csv(result_dir + comment + "score_disentangle.csv", index_col = 0)
 fig = plt.figure(figsize = (15,5))
 ax = fig.subplots(nrows = 1, ncols = 4)
 sns.barplot(data = scores, x = "methods", y = "NMI (common)", ax = ax[0], width = 0.5)
@@ -388,7 +382,7 @@ ax[3].set_xlabel(None)
 show_values(ax[3])
 
 plt.tight_layout()
-fig.savefig(result_dir + "barplot_common.png", bbox_inches = "tight")
+fig.savefig(result_dir + comment + "barplot_common.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (15,5))
 ax = fig.subplots(nrows = 1, ncols = 4)
@@ -427,7 +421,7 @@ ax[3].set_xlabel(None)
 show_values(ax[3])
 
 plt.tight_layout()
-fig.savefig(result_dir + "barplot_condition.png", bbox_inches = "tight")
+fig.savefig(result_dir + comment + "barplot_condition.png", bbox_inches = "tight")
 
 
 fig = plt.figure(figsize = (12,5))
@@ -455,10 +449,10 @@ ax[2].set_xlabel(None)
 show_values(ax[2])
 
 plt.tight_layout()
-fig.savefig(result_dir + "barplot_disentangle.png", bbox_inches = "tight")
+fig.savefig(result_dir + comment + "barplot_disentangle.png", bbox_inches = "tight")
 
 
-
+assert False
 # In[] 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #
@@ -466,7 +460,11 @@ fig.savefig(result_dir + "barplot_disentangle.png", bbox_inches = "tight")
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-model_params = torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
+
+model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 # last 21 dimensions are batch ids
 inf = model.extract_gene_scores()[0]
 sorted_genes = genes[np.argsort(inf)[::-1]]
@@ -488,21 +486,21 @@ sns.violinplot(x="score", y = "type", data = key_genes_score, palette="Set3")
 # metallothioneins and neuron marker genes: H1FX, MT1X, MT2A, MT1E, MT1H, MT1G, SNAP25, RAB3A, NRGN, NXPH4, SLC17A7
 key_genes1 = key_genes_score[key_genes_score["genes"].isin(["H1FX", "MT1X", "MT2A", "MT1E", "MT1H", "MT1G", "SNAP25", "RAB3A", "NRGN", "NXPH4", "SLC17A7"])]
 g = sns.stripplot(x="score", y = "type", data = key_genes1, color="red", edgecolor="gray", size = 6)
-texts_red = []
-for i in range(len(key_genes1)):
-    if i <= 20:
-        texts_red.append(g.text(y=key_genes1["type"].values[i], x=key_genes1["score"].values[i]+0.001, s=key_genes1["genes"].values[i], horizontalalignment='right', size='medium', color='red', fontsize = 10))
+# texts_red = []
+# for i in range(len(key_genes1)):
+#     if i <= 20:
+#         texts_red.append(g.text(y=key_genes1["type"].values[i], x=key_genes1["score"].values[i]+0.001, s=key_genes1["genes"].values[i], horizontalalignment='right', size='medium', color='red'))
 
 # Myeloid-relevent genes
 key_genes2 = key_genes_score[key_genes_score["genes"].isin(["CD68", "CTSD", "CTSB", "CD163", "CYBB", "CCR5", "CTSZ", "SAMHD1", "PLA2G7", "SIGLEC1", "LILRB3", "CCR1", "APOBR"])]
 g = sns.stripplot(x="score", y = "type", data = key_genes2, color="blue", edgecolor="gray", size = 6)
-texts_blue = []
-for i in range(len(key_genes2)):
-    if i <= 20:
-        texts_blue.append(g.text(y=key_genes2["type"].values[i], x=key_genes2["score"].values[i]+0.001, s=key_genes2["genes"].values[i], horizontalalignment='right', size='medium', color='blue', fontsize = 10))
+# texts_blue = []
+# for i in range(len(key_genes2)):
+#     if i <= 20:
+#         texts_blue.append(g.text(y=key_genes2["type"].values[i], x=key_genes2["score"].values[i]+0.001, s=key_genes2["genes"].values[i], horizontalalignment='right', size='medium', color='blue'))
 
-# adjust_text(, only_move={'points':'y', 'texts':'y'}, arrowprops=dict(arrowstyle="->", color='black', lw=0.5))
-adjust_text(texts_red + texts_blue, only_move={'points':'y', 'texts':'y'})
+# # adjust_text(, only_move={'points':'y', 'texts':'y'}, arrowprops=dict(arrowstyle="->", color='black', lw=0.5))
+# adjust_text(texts_red + texts_blue, only_move={'points':'y', 'texts':'y'})
 
 ax.set(ylabel=None, yticks = [])
 # key_genes3 = key_genes_score[key_genes_score["genes"].isin(["LEFTY1", "BEX5", "SAXO2", "KCNB1"])]

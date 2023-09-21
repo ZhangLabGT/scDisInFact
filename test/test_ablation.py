@@ -7,6 +7,7 @@ import pandas as pd
 sys.path.append("..")
 import scDisInFact.model as scdisinfact
 import scDisInFact.utils as utils
+import scDisInFact.loss_function as loss_func
 import scDisInFact.bmk as bmk
 
 from umap import UMAP
@@ -53,6 +54,37 @@ def rank_marker(counts_predict, counts_input_denoised, counts_input, counts_gt):
     AUPRC = bmk.compute_auprc(pred_diff, gt_diff)
     return AUPRC
 
+def rank_marker_separate(counts_predict, counts_input_denoised, counts_input, counts_gt):
+    """
+    Description:
+    -------------
+        Measuring the perturbed gene detection accuracy using AUPRC. 
+        The cells in input count matrices are all matched. 
+    Parameters:
+    -------------
+        counts_predict: 
+            The denoised count matrix under the predicted condition
+        counts_input_denoised:
+            The (scdisinfact) denoised count matrix under the input condition
+        counts_input:
+            The raw count matrix under the input condition
+        counts_gt:
+            The raw count matrix under the ground truth condition
+    
+    Return:
+    -------------
+        AUPRCs: the accuracy of the detected gene expression change 
+    """
+    ncells = counts_predict.shape[0]
+    AUPRCs = []
+    for cell_id in range(ncells):
+        pred_diff = counts_predict[cell_id,:] - counts_input_denoised[cell_id,:]
+        gt_diff = counts_gt[cell_id,:] - counts_input[cell_id,:]
+        AUPRC = bmk.compute_auprc(pred_diff, gt_diff)
+        AUPRCs.append(AUPRC)
+    AUPRCs = np.array(AUPRCs)
+    return AUPRCs
+
 print("# -------------------------------------------------------------------------------------------")
 print("#")
 print("# Ablation test on Contrastive loss")
@@ -71,6 +103,23 @@ simulated_lists = [
   "2conds_base_10000_500_0.4_100_4",
   "2conds_base_10000_500_0.4_100_8",
  ]
+
+ablation = "class"
+if ablation == "contr":
+    result_dir = "./results_simulated/ablation/contrastive/"
+elif ablation == "gl":
+    regs = [0, 0.01, 0.1, 1]
+    result_dir = "./results_simulated/ablation/group_lasso_new/"
+elif ablation == "tc":
+    regs = [0, 1]
+    result_dir = "./results_simulated/ablation/total_correlation/"
+elif ablation == "mmd":
+    regs = [0, 1e-4]
+    result_dir = "./results_simulated/ablation/MMD_new/"
+elif ablation == "class":
+    regs = [0, 0.01, 0.1, 1]
+    result_dir = "./results_simulated/ablation/class_new/"
+
 # In[]
 print("# -------------------------------------------------------------------------------------------")
 print("#")
@@ -79,13 +128,6 @@ print("#")
 print("# -------------------------------------------------------------------------------------------")
 
 
-ablation = "gl"
-if ablation == "contr":
-    result_dir = "./results_simulated/ablation/contrastive/"
-elif ablation == "gl":
-    result_dir = "./results_simulated/ablation/group_lasso/"
-elif ablation == "tc":
-    result_dir = "./results_simulated/ablation/total_correlation/"
 
 for dataset_dir in simulated_lists:
     data_dir = f"../data/simulated/unif/{dataset_dir}/"
@@ -161,40 +203,41 @@ for dataset_dir in simulated_lists:
     # default parameters
     reg_mmd_comm = 1e-4
     reg_mmd_diff = 1e-4
-    reg_tc = 0.5
+    reg_kl_comm = 1e-5
+    reg_kl_diff = 1e-2
     reg_class = 1
-    reg_kl = 1e-5
+    reg_gl = 1
+
     Ks = [8, 4, 4]
     batch_size = 64
     nepochs = 50
     interval = 10
     lr = 5e-4
-    reg_gl = 1
-    reg_contr = 0.01
-
-    """
-    for reg in [0, 0.01, 0.1, 1]:
+    
+    # training model, comment out if already trained
+    for reg in regs:
         if ablation == "gl":
             reg_gl = reg
         elif ablation == "contr":
             reg_contr = reg
         elif ablation == "tc":
             reg_tc = reg
+        elif ablation == "mmd":
+            reg_mmd_comm = reg
+            reg_mmd_diff = reg
+        elif ablation == "class":
+            reg_class = reg
 
         # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-        lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+        lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
         print(lambs)
-
         model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                        reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                        reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
+                                        reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                        reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
         model.train()
-        losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
+        losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
         _ = model.eval()
-
         torch.save(model.state_dict(), result_dir + f"{dataset_dir}_oos/" + f"scdisinfact_{Ks}_{lambs}.pth")
-    """
 
     # Prediction: Select input and predict conditions/batches
     configs_input = [{"condition 1": "stim", "condition 2": "severe", "batch": 0},
@@ -207,10 +250,123 @@ for dataset_dir in simulated_lists:
 
     score_list = []
     score_cluster_list = []
-    for config in configs_input:
-        print("input condition: " + str(config))
-        for reg in [0, 0.01, 0.1, 1]:
-            
+    score_disentangle_list = [] 
+
+    for reg in regs:
+        if ablation == "gl":
+            reg_gl = reg
+        elif ablation == "contr":
+            reg_contr = reg
+        elif ablation == "tc":
+            reg_tc = reg
+        elif ablation == "mmd":
+            reg_mmd_comm = reg
+            reg_mmd_diff = reg
+        elif ablation == "class":
+            reg_class = reg
+        # load model
+        lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
+        print("Loading model...")
+        print(f"Ks: {Ks}")
+        print(f"Lambs: {lambs}")
+        model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+                                        reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                        reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
+        model.load_state_dict(torch.load(result_dir + f"{dataset_dir}_oos/" + f"scdisinfact_{Ks}_{lambs}.pth", map_location = device))
+        
+        print("latent space (unshared-bio factors) disentanglement.")
+        z_cs = []        
+        z_ds = []
+        for dataset in data_dict_train["datasets"]:
+            with torch.no_grad():
+                # pass through the encoders
+                dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)
+                z_c = dict_inf["mu_c"]
+                z_d = dict_inf["mu_d"]
+                z_cs.append(z_c.cpu().detach())
+                z_ds.append([x.cpu().detach() for x in z_d])
+ 
+        z_cs = torch.concat(z_cs, dim = 0)
+        z_ds_cond1 = torch.concat([z_d[0] for z_d in z_ds], dim = 0)
+        z_ds_cond2 = torch.concat([z_d[1] for z_d in z_ds], dim = 0)
+        # ctrl/stim
+        condition1 = np.concatenate([x["condition 1"].values.squeeze() for x in data_dict_train["meta_cells"]])
+        # healthy/severe
+        condition2 = np.concatenate([x["condition 2"].values.squeeze() for x in data_dict_train["meta_cells"]])
+        batch = np.concatenate([x["batch"].values.squeeze() for x in data_dict_train["meta_cells"]])
+        annos = np.concatenate([x["annos"].values.squeeze() for x in data_dict_train["meta_cells"]])
+
+        umap_op = UMAP(min_dist = 0.1, random_state = 0)
+        pca_op = PCA(n_components = 2)
+        z_cs_umap = umap_op.fit_transform(z_cs.numpy())
+        z_ds_umap = []
+        z_ds_umap.append(pca_op.fit_transform(z_ds_cond1.numpy()))
+        z_ds_umap.append(pca_op.fit_transform(z_ds_cond2.numpy()))
+
+        comment = f"{dataset_dir}_oos/results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/"
+        if not os.path.exists(result_dir + comment):
+            os.makedirs(result_dir + comment)
+
+        batch_annos = np.where(batch == 0, "batch 1", "batch 2")
+        utils.plot_latent(zs = z_cs_umap, annos = annos, batches = batch_annos, mode = "annos", axis_label = "UMAP", figsize = (10,5), \
+                          save = (result_dir + comment+"common_dims_annos.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+        utils.plot_latent(zs = z_cs_umap, annos = annos, batches = batch_annos, mode = "separate", axis_label = "UMAP", figsize = (10,10), \
+            save = (result_dir + comment+"common_dims_annos_separate.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
+
+
+        utils.plot_latent(zs = z_cs_umap, annos = annos, batches = batch_annos, mode = "batches", axis_label = "UMAP", figsize = (7,5), \
+                          save = (result_dir + comment+"common_dims_batches.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+        utils.plot_latent(zs = z_cs_umap, annos = annos, batches = batch_annos, mode = "annos", axis_label = "UMAP", figsize = (7,5), \
+                          save = (result_dir + comment+"common_dims_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+
+        utils.plot_latent(zs = z_ds_umap[0], annos = annos, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (10,5), \
+                          save = (result_dir + comment+"diff_dims1_annos.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+        utils.plot_latent(zs = z_ds_umap[0], annos = condition1, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (7,5), \
+                          save = (result_dir + comment+"diff_dims1_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+        utils.plot_latent(zs = z_ds_umap[0], annos = condition2, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (7,5), \
+                          save = (result_dir + comment+"diff_dims1_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+
+        utils.plot_latent(zs = z_ds_umap[1], annos = annos, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (10,5), \
+                          save = (result_dir + comment+"diff_dims2_annos.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+        utils.plot_latent(zs = z_ds_umap[1], annos = condition1, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (7,5), \
+                          save = (result_dir + comment+"diff_dims2_cond1.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+        utils.plot_latent(zs = z_ds_umap[1], annos = condition2, batches = batch_annos, mode = "annos", axis_label = "PCA", figsize = (7,5), \
+                          save = (result_dir + comment+"diff_dims2_cond2.png".format()) if result_dir else None, markerscale = 9, s = 1, alpha = 0.5)
+
+        # NOTE: measure independence across factors. (No need for TC) Already eliminated by MMD loss
+
+        # independence of unshared factors
+        idx_stim_healthy = ((condition1 == "stim") & (condition2 == "healthy"))
+        idx_stim_severe = ((condition1 == "stim") & (condition2 == "severe"))
+        mmd_conds = loss_func.maximum_mean_discrepancy(xs = torch.cat([z_ds_cond1[idx_stim_healthy,:], z_ds_cond1[idx_stim_severe,:]], dim = 0), 
+                                                       batch_ids = torch.Tensor([0] * np.sum(idx_stim_healthy) + [1] * np.sum(idx_stim_severe)), device = torch.device("cpu"))
+        asw_conds = bmk.silhouette_batch(X = torch.cat([z_ds_cond1[idx_stim_healthy,:], z_ds_cond1[idx_stim_severe,:]], dim = 0).numpy(), 
+                                         batch_gt = np.array([0] * np.sum(idx_stim_healthy) + [1] * np.sum(idx_stim_severe)), 
+                                         group_gt = np.array([0] * (np.sum(idx_stim_healthy) + np.sum(idx_stim_severe))), verbose = False)
+        idx_stim_healthy = ((condition1 == "stim") & (condition2 == "healthy"))
+        idx_ctrl_healthy = ((condition1 == "ctrl") & (condition2 == "healthy"))
+        mmd_conds += loss_func.maximum_mean_discrepancy(xs = torch.cat([z_ds_cond2[idx_stim_healthy,:], z_ds_cond2[idx_ctrl_healthy,:]], dim = 0), 
+                                                        batch_ids = torch.Tensor([0] * np.sum(idx_stim_healthy) + [1] * np.sum(idx_ctrl_healthy)), device = torch.device("cpu"))
+        asw_conds += bmk.silhouette_batch(X = torch.cat([z_ds_cond1[idx_stim_healthy,:], z_ds_cond1[idx_ctrl_healthy,:]], dim = 0).numpy(), 
+                                          batch_gt = np.array([0] * np.sum(idx_stim_healthy) + [1] * np.sum(idx_ctrl_healthy)), 
+                                          group_gt = np.array([0] * (np.sum(idx_stim_healthy) + np.sum(idx_ctrl_healthy))), verbose = False)
+        mmd_conds = mmd_conds * 0.5
+        asw_conds = asw_conds * 0.5
+
+        asw_comm_batch = bmk.silhouette_batch(X = z_cs.numpy(), batch_gt = batch, group_gt = annos, verbose = False)
+        asw_comm_cond1 = bmk.silhouette_batch(X = z_cs.numpy(), batch_gt = condition1, group_gt = annos, verbose = False)
+        asw_comm_cond2 = bmk.silhouette_batch(X = z_cs.numpy(), batch_gt = condition2, group_gt = annos, verbose = False)
+        asw_cond1_batch = bmk.silhouette_batch(X = z_ds_cond1.numpy(), batch_gt = batch, group_gt = condition1, verbose = False)
+        asw_cond2_batch = bmk.silhouette_batch(X = z_ds_cond2.numpy(), batch_gt = batch, group_gt = condition2, verbose = False)
+
+        score_disentangle = pd.DataFrame(data = [[dataset_dir, mmd_conds.item(), asw_conds, asw_comm_batch, (asw_cond1_batch + asw_cond2_batch)/2, (asw_comm_cond1 + asw_comm_cond2)/2, f"reg: {reg}"]], 
+                                         columns = ["dataset", "MMD (indep conds)", "ASW (indep conds)", "ASW (indep batch&comm)", "ASW (indep batch&cond)", "ASW (indep cond&comm)", "method"])
+        score_disentangle_list.append(score_disentangle)
+
+        print(f"Perturbation prediction of dataset: {dataset_dir}, predict: ctrl, severe, batch 0")
+        for config in configs_input:
+            print("input condition: " + str(config))
+                        
             # load input and gt count matrices
             idx = ((meta_train["condition 1"] == config["condition 1"]) & (meta_train["condition 2"] == config["condition 2"]) & (meta_train["batch"] == config["batch"])).values
             # input and ground truth, cells are matched
@@ -219,19 +375,6 @@ for dataset_dir in simulated_lists:
             counts_gt = counts_gt_full[idx, :]
             meta_gt = meta_gt_full.loc[idx, :]
 
-            # load params
-            if ablation == "gl":
-                reg_gl = reg
-            elif ablation == "contr":
-                reg_contr = reg
-            elif ablation == "tc":
-                reg_tc = reg
-            # load model
-            lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
-            model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                            reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                            reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-            model.load_state_dict(torch.load(result_dir + f"{dataset_dir}_oos/" + f"scdisinfact_{Ks}_{lambs}.pth", map_location = device))
             # predict count
             counts_input_denoised = model.predict_counts(input_counts = counts_input, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
                                             batch_key = "batch", predict_conds = None, predict_batch = None)
@@ -245,8 +388,7 @@ for dataset_dir in simulated_lists:
             # NOTE: perturbed gene prediction accuracy, measured with AUPRC
             # should be calculated before normalization
             AUPRC = rank_marker(counts_predict = counts_predict, counts_input_denoised = counts_input_denoised, counts_input = counts_input, counts_gt = counts_gt)
-            print("reg_gl: {:.3f}".format(reg_gl))
-            print("perturbation prediction: {:.3f}".format(AUPRC))
+            AUPRC_sep = rank_marker_separate(counts_predict = counts_predict, counts_input_denoised = counts_input_denoised, counts_input = counts_input, counts_gt = counts_gt)
 
             # normalize the count
             # Is normalization better? Make sure the libsize of predict and gt are the same for each cell (or they will not be on the same scale)
@@ -313,7 +455,7 @@ for dataset_dir in simulated_lists:
             r2_input = np.array([r2_score(y_pred = counts_input[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
             r2_scdisinfact = np.array([r2_score(y_pred = counts_predict[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
 
-            score = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "AUPRC", "Method", "Prediction"])
+            score = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "AUPRC", "AUPRC (cell-level)", "Method", "Prediction"])
             score["MSE"] = mses_scdisinfact
             score["MSE input"] = mses_input
             score["Pearson"] = pearsons_scdisinfact
@@ -321,6 +463,7 @@ for dataset_dir in simulated_lists:
             score["R2"] = r2_scdisinfact
             score["R2 input"] = r2_input
             score["AUPRC"] = AUPRC
+            score["AUPRC (cell-level)"] = AUPRC_sep
             score["Method"] = f"reg: {reg}"
             score["Prediction"] = config["condition 1"] + "_" + config["condition 2"] + "_" + str(config["batch"])
             score_list.append(score)
@@ -331,31 +474,35 @@ for dataset_dir in simulated_lists:
     scores = pd.concat(score_list, axis = 0)
     scores.to_csv(result_dir + f"{dataset_dir}_oos/" + "prediction_scores.csv")
 
+    scores_disentangle = pd.concat(score_disentangle_list, axis = 0)
+    scores_disentangle.to_csv(result_dir + f"{dataset_dir}_oos/" + "disentangle_scores.csv")
+
+
 # In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 2. CKG detection")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
 auprc_dict = pd.DataFrame(columns = ["dataset", "condition", "ndiff_genes", "AUPRC", "AUPRC ratio", "method", "ndiff"])
 
 for dataset_dir in simulated_lists:
     ngenes = eval(dataset_dir.split("_")[3])
     ndiff_genes = eval(dataset_dir.split("_")[5])
     ndiff = eval(dataset_dir.split("_")[6])
+    print(f"CKG detection: {dataset_dir}")
 
     # no group lasso loss
-    for reg in [0, 0.01, 0.1, 1]:
-        # load params
+    for reg in regs:
         if ablation == "gl":
             reg_gl = reg
         elif ablation == "contr":
             reg_contr = reg
         elif ablation == "tc":
             reg_tc = reg
+        elif ablation == "mmd":
+            reg_mmd_comm = reg
+            reg_mmd_diff = reg
+        elif ablation == "class":
+            reg_class = reg
 
         # load model
-        lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
+        lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
 
         params = torch.load(result_dir + f"{dataset_dir}_oos/scdisinfact_{Ks}_{lambs}.pth", map_location = device)
 
@@ -394,47 +541,114 @@ print("# -----------------------------------------------------------------------
 
 plt.rcParams["font.size"] = 15
 scores_prediction = []
-
 for dataset_dir in simulated_lists:
     scores_prediction.append(pd.read_csv(result_dir + f"{dataset_dir}_oos/prediction_scores.csv", index_col = 0))
 scores_prediction = pd.concat(scores_prediction, axis = 0)
-auprc_dict = pd.read_csv(result_dir + f"CKG_scores.txt", index_col = 0, sep = "\t")
 scores_prediction["MSE ratio"] = scores_prediction["MSE"].values/scores_prediction["MSE input"].values
 scores_prediction["R2 ratio"] = scores_prediction["R2"].values/scores_prediction["R2 input"].values
-auprc_dict = auprc_dict.loc[auprc_dict["Method"] != "reg: 1",:]
-scores_prediction = scores_prediction.loc[scores_prediction["Method"] != "reg: 1",:]
+
+auprc_dict = pd.read_csv(result_dir + f"CKG_scores.txt", index_col = 0, sep = "\t")
+scores_disentangle = []
+for dataset_dir in simulated_lists:
+    scores_disentangle.append(pd.read_csv(result_dir + f"{dataset_dir}_oos/disentangle_scores.csv", index_col = 0))
+scores_disentangle = pd.concat(scores_disentangle, axis = 0)
+scores_disentangle.index = scores_disentangle["dataset"].values
+
+if ablation in ["gl", "class"]:
+    scores_prediction = scores_prediction.loc[(scores_prediction["Method"] == "reg: 0") | (scores_prediction["Method"] == "reg: 1"),:]
+    auprc_dict = auprc_dict.loc[(auprc_dict["Method"] == "reg: 0") | (auprc_dict["Method"] == "reg: 1"),:]
+    scores_disentangle = scores_disentangle.loc[(scores_disentangle["method"] == "reg: 0") | (scores_disentangle["method"] == "reg: 1"),:]
+
+scores_prediction = scores_prediction[scores_prediction["Prediction"].isin(["ctrl_healthy_0", "stim_healthy_0", "stim_severe_0"])]
+
+fig = plt.figure(figsize = (20,5))
+axs = fig.subplots(nrows = 1, ncols = 4)
+ax = sns.barplot(x='method', y="ASW (indep conds)", data=scores_disentangle, ax = axs[0], ci = None)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')  
+# ax.set_ylim(0.3, 0.6) 
+ax.set_ylabel("ASW")
+ax.set_xlabel(None)
+ax.set_title("Indep (unshared factors)")
+ax = sns.barplot(x='method', y="ASW (indep batch&comm)", data=scores_disentangle, ax = axs[1], ci = None) 
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')  
+ax.set_ylim(0.6, 1.0) 
+ax.set_ylabel("ASW")
+ax.set_xlabel(None)
+ax.set_title("Indep (batch & shared factor)")
+ax = sns.barplot(x='method', y="ASW (indep batch&cond)", data=scores_disentangle, ax = axs[2], ci = None) 
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')  
+ax.set_ylim(0.6, 1.0) 
+ax.set_ylabel("ASW")
+ax.set_xlabel(None)
+ax.set_title("Indep (batch & unshared factor)")
+ax = sns.barplot(x='method', y="ASW (indep cond&comm)", data=scores_disentangle, ax = axs[3], ci = None)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')   
+ax.set_ylim(0.6, 1.0) 
+ax.set_ylabel("ASW")
+ax.set_xlabel(None)
+ax.set_title("Indep (unshared & shared factor)")
+plt.tight_layout()
+fig.savefig(result_dir + "scores_disentangle.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (12,5))
 # ax = fig.subplots(nrows = 1, ncols = 3)
 ax = fig.add_subplot()
-ax = sns.barplot(x='Prediction', y='MSE ratio', hue='Method', data=scores_prediction, ax = ax, errwidth=0.1) 
+ax = sns.barplot(x='Prediction', y='MSE', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1) 
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2e')    
 # ax.set_ylim(0, 0.01)
-ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+# ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.savefig(result_dir + "prediction_MSE_ratio.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (12,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='Prediction', y='AUPRC', hue='Method', data=scores_prediction, ax = ax, errwidth=0.1) 
+ax = sns.barplot(x='Prediction', y='AUPRC', hue='Method', data=scores_prediction, ax = ax, ci = None) # , errwidth=1, capsize = 0.1) 
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
 ax.set_ylim(0.0, 1.2)
-ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+# ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.savefig(result_dir + "prediction_AUPRC.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (12,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='Prediction', y='R2 ratio', hue='Method', data=scores_prediction, ax = ax, errwidth=0.1)
+ax = sns.barplot(x='Prediction', y='AUPRC (cell-level)', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1) 
+ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
+ax.set_ylim(0.0, 1.2)
+# ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
+fig.savefig(result_dir + "prediction_AUPRC(cell_level).png", bbox_inches = "tight")
+
+fig = plt.figure(figsize = (12,5))
+ax = fig.add_subplot()
+ax = sns.barplot(x='Prediction', y='R2', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
 # ax.set_ylim(0.60, 1)
-ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
+# ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity", "Treatment\n& Batch", "Severity\n& Batch", "Treatment\n& Severity\n& Batch"])
+ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.tight_layout()
 fig.savefig(result_dir + "prediction_R2_ratio.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (12,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x = "ndiff", hue = 'Method', y ='AUPRC', data=auprc_dict, ax = ax, errwidth=0.5, capsize = 0.4)
+ax = sns.barplot(x = "ndiff", hue = 'Method', y ='AUPRC', data=auprc_dict, ax = ax, ci = None)#, errwidth=1, capsize = 0.1)
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
-ax.set_ylim(0.60, 1)
+# ax.set_ylim(0.50, 1.02)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
 fig.tight_layout()
 fig.savefig(result_dir + "CKGs_AUPRC.png", bbox_inches = "tight")
 

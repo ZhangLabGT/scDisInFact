@@ -24,8 +24,8 @@ from sklearn.metrics import r2_score
 
 # In[]
 sigma = 0.4
-n_diff_genes = 20
-diff = 2
+n_diff_genes = 100
+diff = 8
 ngenes = 500
 ncells_total = 10000 
 n_batches = 2
@@ -122,32 +122,29 @@ counts_scinsight = np.concatenate(counts_scinsight, axis = 0)
 
 # In[] training the model
 # TODO: track the time usage and memory usage
-import importlib 
-importlib.reload(scdisinfact)
 reg_mmd_comm = 1e-4
 reg_mmd_diff = 1e-4
-reg_gl = 1
-reg_tc = 0.5
+reg_kl_comm = 1e-5
+reg_kl_diff = 1e-2
 reg_class = 1
-reg_kl = 1e-5
-reg_contr = 0.01
-# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
-lambs = [reg_mmd_comm, reg_mmd_diff, reg_class, reg_gl, reg_tc, reg_kl, reg_contr]
-Ks = [8, 4, 4]
+reg_gl = 1
 
+# mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
+lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
+Ks = [8, 4, 4]
 batch_size = 64
 nepochs = 100
 interval = 10
 lr = 5e-4
 
 model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
-                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_tc = reg_tc, 
-                                reg_kl = reg_kl, reg_class = reg_class, seed = 0, device = device)
-
+                                reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
+                                reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 model.train()
-# losses = model.train_model(nepochs = nepochs, recon_loss = "NB", reg_contr = reg_contr)
-# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
-model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
+losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+_ = model.eval()
+torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 _ = model.eval()
 
 
@@ -597,31 +594,33 @@ if True:
         sil_condition_batches_scdisinfact = np.max(score.loc[score["methods"] == "scDisInFact", "Silhouette batch (condition & batches)"].values)
         sil_condition_batches_scinsight = np.max(score.loc[score["methods"] == "scInsight", "Silhouette batch (condition & batches)"].values)
 
-        scores_all = scores_all.append({
-            "methods": "scDisInFact",
-            "NMI (common)": nmi_common_scdisinfact, 
-            "ARI (common)": ari_common_scdisinfact, 
-            "NMI (condition)": nmi_condition_scdisinfact, 
-            "ARI (condition)": ari_condition_scdisinfact, 
-            "GC (common)": gc_common_scdisinfact, 
-            "GC (condition)": gc_condition_scdisinfact, 
-            "Silhouette batch (common)": sil_common_scdisinfact, 
-            "Silhouette batch (condition & celltype)": sil_condition_celltype_scdisinfact, 
-            "Silhouette batch (condition & batches)": sil_condition_batches_scdisinfact
-        }, ignore_index = True)
+        scores_all = pd.concat([scores_all,
+                                pd.DataFrame.from_dict({
+                                    "methods": ["scDisInFact"],
+                                    "NMI (common)": [nmi_common_scdisinfact], 
+                                    "ARI (common)": [ari_common_scdisinfact], 
+                                    "NMI (condition)": [nmi_condition_scdisinfact], 
+                                    "ARI (condition)": [ari_condition_scdisinfact], 
+                                    "GC (common)": [gc_common_scdisinfact], 
+                                    "GC (condition)": [gc_condition_scdisinfact], 
+                                    "Silhouette batch (common)": [sil_common_scdisinfact], 
+                                    "Silhouette batch (condition & celltype)": [sil_condition_celltype_scdisinfact], 
+                                    "Silhouette batch (condition & batches)": [sil_condition_batches_scdisinfact]
+                                })], axis = 0, ignore_index = True)
         
-        scores_all = scores_all.append({
-            "methods": "scINSIGHT",
-            "NMI (common)": nmi_common_scinsight, 
-            "ARI (common)": ari_common_scinsight, 
-            "NMI (condition)": nmi_condition_scinsight, 
-            "ARI (condition)": ari_condition_scinsight, 
-            "GC (common)": gc_common_scinsight, 
-            "GC (condition)": gc_condition_scinsight, 
-            "Silhouette batch (common)": sil_common_scinsight, 
-            "Silhouette batch (condition & celltype)": sil_condition_celltype_scinsight, 
-            "Silhouette batch (condition & batches)": sil_condition_batches_scinsight
-        }, ignore_index = True)
+        scores_all = pd.concat([scores_all,
+                                pd.DataFrame.from_dict({
+                                    "methods": ["scINSIGHT"],
+                                    "NMI (common)": [nmi_common_scinsight], 
+                                    "ARI (common)": [ari_common_scinsight], 
+                                    "NMI (condition)": [nmi_condition_scinsight], 
+                                    "ARI (condition)": [ari_condition_scinsight], 
+                                    "GC (common)": [gc_common_scinsight], 
+                                    "GC (condition)": [gc_condition_scinsight], 
+                                    "Silhouette batch (common)": [sil_common_scinsight], 
+                                    "Silhouette batch (condition & celltype)": [sil_condition_celltype_scinsight], 
+                                    "Silhouette batch (condition & batches)": [sil_condition_batches_scinsight]
+                                })], axis = 0, ignore_index = True)
 
         # second condition
         score = pd.read_csv(result_dir + "2conds_base_10000_500_" + dataset + "/score2.csv", index_col = 0)
@@ -652,31 +651,33 @@ if True:
         sil_condition_batches_scdisinfact = np.max(score.loc[score["methods"] == "scDisInFact", "Silhouette batch (condition & batches)"].values)
         sil_condition_batches_scinsight = np.max(score.loc[score["methods"] == "scInsight", "Silhouette batch (condition & batches)"].values)
 
-        scores_all = scores_all.append({
-            "methods": "scDisInFact",
-            "NMI (common)": nmi_common_scdisinfact, 
-            "ARI (common)": ari_common_scdisinfact, 
-            "NMI (condition)": nmi_condition_scdisinfact, 
-            "ARI (condition)": ari_condition_scdisinfact, 
-            "GC (common)": gc_common_scdisinfact, 
-            "GC (condition)": gc_condition_scdisinfact, 
-            "Silhouette batch (common)": sil_common_scdisinfact, 
-            "Silhouette batch (condition & celltype)": sil_condition_celltype_scdisinfact, 
-            "Silhouette batch (condition & batches)": sil_condition_batches_scdisinfact
-        }, ignore_index = True)
-        
-        scores_all = scores_all.append({
-            "methods": "scINSIGHT",
-            "NMI (common)": nmi_common_scinsight, 
-            "ARI (common)": ari_common_scinsight, 
-            "NMI (condition)": nmi_condition_scinsight, 
-            "ARI (condition)": ari_condition_scinsight, 
-            "GC (common)": gc_common_scinsight, 
-            "GC (condition)": gc_condition_scinsight, 
-            "Silhouette batch (common)": sil_common_scinsight, 
-            "Silhouette batch (condition & celltype)": sil_condition_celltype_scinsight, 
-            "Silhouette batch (condition & batches)": sil_condition_batches_scinsight
-        }, ignore_index = True)
+        scores_all = pd.concat([scores_all,
+                                pd.DataFrame.from_dict({
+                                    "methods": ["scDisInFact"],
+                                    "NMI (common)": [nmi_common_scdisinfact], 
+                                    "ARI (common)": [ari_common_scdisinfact], 
+                                    "NMI (condition)": [nmi_condition_scdisinfact], 
+                                    "ARI (condition)": [ari_condition_scdisinfact], 
+                                    "GC (common)": [gc_common_scdisinfact], 
+                                    "GC (condition)": [gc_condition_scdisinfact], 
+                                    "Silhouette batch (common)": [sil_common_scdisinfact], 
+                                    "Silhouette batch (condition & celltype)": [sil_condition_celltype_scdisinfact], 
+                                    "Silhouette batch (condition & batches)": [sil_condition_batches_scdisinfact]
+                                })], axis = 0, ignore_index = True)
+                            
+        scores_all = pd.concat([scores_all,
+                                pd.DataFrame.from_dict({
+                                    "methods": ["scINSIGHT"],
+                                    "NMI (common)": [nmi_common_scinsight], 
+                                    "ARI (common)": [ari_common_scinsight], 
+                                    "NMI (condition)": [nmi_condition_scinsight], 
+                                    "ARI (condition)": [ari_condition_scinsight], 
+                                    "GC (common)": [gc_common_scinsight], 
+                                    "GC (condition)": [gc_condition_scinsight], 
+                                    "Silhouette batch (common)": [sil_common_scinsight], 
+                                    "Silhouette batch (condition & celltype)": [sil_condition_celltype_scinsight], 
+                                    "Silhouette batch (condition & batches)": [sil_condition_batches_scinsight]
+                                })], axis = 0, ignore_index = True)
 # In[]
 if True:
     fig = plt.figure(figsize = (20,5))
