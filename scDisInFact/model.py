@@ -666,7 +666,7 @@ class scdisinfact(nn.Module):
                         #             trigger = 0                            
 
         self.eval()                
-        return loss_tests, loss_recon_tests, loss_kl_comm_test, loss_kl_diff_test, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests
+        return loss_tests, loss_recon_tests, loss_kl_comm_tests, loss_kl_diff_tests, loss_mmd_comm_tests, loss_mmd_diff_tests, loss_class_tests, loss_gl_d_tests
 
 
     def predict_counts(self, input_counts, meta_cells, condition_keys, batch_key, predict_conds = None, predict_batch = None):
