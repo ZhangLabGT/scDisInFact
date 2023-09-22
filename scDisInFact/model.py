@@ -302,6 +302,31 @@ class scdisinfact(nn.Module):
         # unique data batches
         self.uniq_batch_ids = sorted(set(self.uniq_batch_ids))
 
+        # calculate reference MMD batch (comm), select the largest one 
+        mmd_batch_comm = []
+        for idx, dataset in enumerate(self.data_dict["datasets"]):
+            mmd_batch_comm.append(dataset.mmd_batch_id)
+        mmd_batch_comm = torch.concat(mmd_batch_comm)
+        uniq_mmd_batch, uniq_mmd_batch_count = torch.unique(mmd_batch_comm, sorted = True, return_counts = True)
+        self.mmd_ref_comm = int(uniq_mmd_batch[torch.argmax(uniq_mmd_batch_count)])
+        # calculate the reference MMD batch (diff), select the largest one
+        diff_labels = []
+        mmd_batch_diff = []
+        for diff_factor in range(self.n_diff_factors):
+            diff_labels.append([])
+            mmd_batch_diff.append([])
+            for idx, dataset in enumerate(self.data_dict["datasets"]):
+                diff_labels[diff_factor].append(dataset.diff_labels[diff_factor])
+                mmd_batch_diff[diff_factor].append(dataset.mmd_batch_id)
+        self.mmd_ref_diff = [{} for x in range(self.n_diff_factors)]
+        for diff_factor in range(self.n_diff_factors):
+            diff_labels[diff_factor] = torch.concat(diff_labels[diff_factor])
+            mmd_batch_diff[diff_factor] = torch.concat(mmd_batch_diff[diff_factor])
+            for uniq_diff_label in self.uniq_diff_labels[diff_factor]:
+                uniq_mmd_batch, uniq_mmd_batch_count = torch.unique(mmd_batch_diff[diff_factor][diff_labels[diff_factor] == uniq_diff_label], sorted = True, return_counts = True)
+                self.mmd_ref_diff[diff_factor][uniq_diff_label] = int(uniq_mmd_batch[torch.argmax(uniq_mmd_batch_count)])
+
+        
         # create model
         # encoder for common biological factor
         self.Enc_c = base_model.Encoder(n_input = self.ngenes, n_output = self.Ks["common_factor"], n_layers = 2, n_hidden = 128, n_cat_list = [len(self.uniq_batch_ids)], dropout_rate  = 0.2, use_batch_norm = False).to(self.device)
@@ -445,7 +470,7 @@ class scdisinfact(nn.Module):
 
         # 3.MMD loss. NOTE: the batch ID is the MMD-batch combination
         # common mmd loss
-        loss_mmd_comm = loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_c"], batch_ids = batch_id, device = self.device)
+        loss_mmd_comm = loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_c"], batch_ids = batch_id, device = self.device, ref_batch = self.mmd_ref_comm)
         # condition specific mmd loss
         loss_mmd_diff = 0
         # loop through all unshared factors
@@ -454,7 +479,8 @@ class scdisinfact(nn.Module):
             for diff_label in self.uniq_diff_labels[diff_factor]:
                 idx = diff_labels[diff_factor] == diff_label
                 if any(idx):
-                    loss_mmd_diff += loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_d"][diff_factor][idx, :], batch_ids = batch_id[idx], device = self.device)
+                    # reference batch doesn't matter
+                    loss_mmd_diff += loss_func.maximum_mean_discrepancy(xs = dict_inf["mu_d"][diff_factor][idx, :], batch_ids = batch_id[idx], device = self.device, ref_batch = self.mmd_ref_diff[diff_factor][diff_label])
                 else:
                     loss_mmd_diff += 0
 

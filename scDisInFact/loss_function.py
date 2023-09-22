@@ -37,8 +37,8 @@ def maximum_mean_discrepancy(xs, batch_ids, device, ref_batch = None): #Function
     nbatches = batches.shape[0]
     if ref_batch is None:
         # select the first batch, the batches are equal sizes
+        # batch 0 is also the largest batch
         ref_batch = batches[0]
-    # assuming batch 0 is the reference batch
     cost = 0
     # within batch
     for batch in batches:

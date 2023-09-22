@@ -108,11 +108,11 @@ reg_kl_diff = 1e-2
 reg_class = 1
 reg_gl = 1
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
-Ks = [8, 4, 4]
+Ks = [8, 2, 2]
 
 batch_size = 64
 # kl term explode when nepochs = 70
-nepochs = 100
+nepochs = 50
 interval = 10
 lr = 5e-4
 
