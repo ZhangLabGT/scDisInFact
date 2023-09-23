@@ -126,20 +126,20 @@ reg_class = 1
 reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
-Ks = [8, 4]
+Ks = [8, 2]
 
 batch_size = 64
-nepochs = 100
+nepochs = 50
 interval = 10
 lr = 5e-4
 
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
                                 reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
-_ = model.eval()
-torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+# model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+# _ = model.eval()
+# torch.save(model.state_dict(), result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"model_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 
 comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
@@ -154,7 +154,7 @@ z_ds_train = []
 for dataset in data_dict_train["datasets"]:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]
@@ -171,7 +171,7 @@ z_ds_test = []
 for dataset in data_dict_test["datasets"]:
     with torch.no_grad():
         # pass through the encoders
-        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = True)
+        dict_inf = model.inference(counts = dataset.counts_norm.to(model.device), batch_ids = dataset.batch_id[:,None].to(model.device), print_stat = False)
         # pass through the decoder
         dict_gen = model.generative(z_c = dict_inf["mu_c"], z_d = dict_inf["mu_d"], batch_ids = dataset.batch_id[:,None].to(model.device))
         z_c = dict_inf["mu_c"]

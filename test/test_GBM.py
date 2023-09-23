@@ -236,15 +236,10 @@ meta_scinsight = pd.concat([meta_cell.loc[(meta_cell["patient_id"] == "PW029") &
 #------------------------------------------------------------------------------------------------------------------------------------------
 # removal of batch and condition effect
 # 1. scdisinfact
-n_neighbors = 30
-gc_cluster_scdisinfact = bmk.graph_connectivity(X = np.concatenate(z_cs, axis = 0), groups = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), k = n_neighbors)
-print('GC cluster (scDisInFact): {:.3f}'.format(gc_cluster_scdisinfact))
 silhouette_batch_scdisinfact = bmk.silhouette_batch(X = np.concatenate(z_cs, axis = 0), batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), \
                                                     group_gt = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), verbose = False)
 print('Silhouette batch (scDisInFact): {:.3f}'.format(silhouette_batch_scdisinfact))
 # 2. scinsight
-gc_cluster_scinsight = bmk.graph_connectivity(X = W2.values, groups = meta_scinsight["mstatus"].values.squeeze(), k = n_neighbors)
-print('GC cluster (scInsight): {:.3f}'.format(gc_cluster_scinsight))
 silhouette_batch_scinsight = bmk.silhouette_batch(X = W2.values, batch_gt = meta_scinsight["patient_id"].values.squeeze(), group_gt = meta_scinsight["mstatus"].values.squeeze(), verbose = False)
 print('Silhouette batch (scInsight): {:.3f}'.format(silhouette_batch_scinsight))
 
@@ -253,9 +248,9 @@ print('Silhouette batch (scInsight): {:.3f}'.format(silhouette_batch_scinsight))
 # 1. scdisinfact
 nmi_cluster_scdisinfact = []
 ari_cluster_scdisinfact = []
-for resolution in np.arange(0.1, 10, 0.5):
+for resolution in np.arange(0.1, 2, 0.5):
     leiden_labels_clusters = bmk.leiden_cluster(X = np.concatenate(z_cs, axis = 0), knn_indices = None, knn_dists = None, resolution = resolution)
-    print(np.unique(leiden_labels_clusters))
+    print(np.unique(leiden_labels_clusters).shape)
     nmi_cluster_scdisinfact.append(bmk.nmi(group1 = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_clusters))
     ari_cluster_scdisinfact.append(bmk.ari(group1 = np.concatenate([x["mstatus"].values.squeeze() for x in data_dict["meta_cells"]]), group2 = leiden_labels_clusters))
 print('NMI (scDisInFact): {:.3f}'.format(max(nmi_cluster_scdisinfact)))
@@ -264,9 +259,9 @@ print('ARI (scDisInFact): {:.3f}'.format(max(ari_cluster_scdisinfact)))
 # 2. scinsight
 nmi_cluster_scinsight = []
 ari_cluster_scinsight = []
-for resolution in np.arange(0.1, 10, 0.5):
+for resolution in np.arange(0.1, 2, 0.5):
     leiden_labels_clusters = bmk.leiden_cluster(X = W2.values, knn_indices = None, knn_dists = None, resolution = resolution)
-    print(np.unique(leiden_labels_clusters))
+    print(np.unique(leiden_labels_clusters).shape)
     nmi_cluster_scinsight.append(bmk.nmi(group1 = meta_scinsight["mstatus"].values.squeeze(), group2 = leiden_labels_clusters))
     ari_cluster_scinsight.append(bmk.ari(group1 = meta_scinsight["mstatus"].values.squeeze(), group2 = leiden_labels_clusters))
 print('NMI (scInsight): {:.3f}'.format(max(nmi_cluster_scinsight)))
@@ -280,14 +275,8 @@ print('ARI (scInsight): {:.3f}'.format(max(ari_cluster_scinsight)))
 #
 #------------------------------------------------------------------------------------------------------------------------------------------
 # removal of batch effect, removal of cell type effect
-n_neighbors = 30
-gc_condition_scdisinfact = bmk.graph_connectivity(X = np.concatenate([x[0] for x in z_ds], axis = 0), groups = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), k = n_neighbors)
-print('GC condition (scDisInFact): {:.3f}'.format(gc_condition_scdisinfact))
 silhouette_condition_scdisinfact = bmk.silhouette_batch(X = np.concatenate([x[0] for x in z_ds], axis = 0), batch_gt = np.concatenate([x["patient_id"].values.squeeze() for x in data_dict["meta_cells"]]), group_gt = np.concatenate([x["treatment"].values.squeeze() for x in data_dict["meta_cells"]]), verbose = False)
 print('Silhouette condition, removal of batch effect (scDisInFact): {:.3f}'.format(silhouette_condition_scdisinfact))
-
-gc_condition_scinsight = bmk.graph_connectivity(X = x_cond, groups = meta_scinsight["treatment"].values.squeeze(), k = n_neighbors)
-print('GC condition (scInsight): {:.3f}'.format(gc_condition_scinsight))
 silhouette_condition_scinsight = bmk.silhouette_batch(X = x_cond, batch_gt = meta_scinsight["patient_id"].values.squeeze(), group_gt = meta_scinsight["treatment"].values.squeeze(), verbose = False)
 print('Silhouette condition, removal of batch effect (scInsight): {:.3f}'.format(silhouette_condition_scinsight))
 
@@ -307,7 +296,7 @@ print('ARI (scDisInFact): {:.3f}'.format(max(ari_condition_scdisinfact)))
 nmi_condition_scinsight = []
 ari_condition_scinsight = []
 for resolution in range(-3, 1, 1):
-    leiden_labels_conditions = bmk.leiden_cluster(X = x_cond, knn_indices = None, knn_dists = None, resolution = resolution)
+    leiden_labels_conditions = bmk.leiden_cluster(X = x_cond, knn_indices = None, knn_dists = None, resolution = 10 ** resolution)
     print(np.unique(leiden_labels_conditions))
     nmi_condition_scinsight.append(bmk.nmi(group1 = meta_scinsight["treatment"].values.squeeze(), group2 = leiden_labels_conditions))
     ari_condition_scinsight.append(bmk.ari(group1 = meta_scinsight["treatment"].values.squeeze(), group2 = leiden_labels_conditions))
@@ -315,33 +304,23 @@ print('NMI (scInsight): {:.3f}'.format(max(nmi_condition_scinsight)))
 print('ARI (scInsight): {:.3f}'.format(max(ari_condition_scinsight)))
 
 
-scores_scdisinfact = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "GC (common)", "GC (condition)", "Silhouette batch (common)", "Silhouette batch (condition & celltype)", "Silhouette batch (condition & batches)"])
+scores_scdisinfact = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "Silhouette batch (common)", "Silhouette batch (condition & batches)"])
+scores_scdisinfact["methods"] = np.array(["scDisInFact"])
 scores_scdisinfact["NMI (common)"] = np.array([max(nmi_cluster_scdisinfact)])
 scores_scdisinfact["ARI (common)"] = np.array([max(ari_cluster_scdisinfact)])
-scores_scdisinfact["GC (common)"] = np.array([gc_cluster_scdisinfact])
 scores_scdisinfact["Silhouette batch (common)"] = np.array([silhouette_batch_scdisinfact])
-
 scores_scdisinfact["NMI (condition)"] = np.array([max(nmi_condition_scinsight)])
 scores_scdisinfact["ARI (condition)"] = np.array([max(ari_condition_scinsight)])
-scores_scdisinfact["GC (condition)"] = np.array([gc_condition_scdisinfact])
 scores_scdisinfact["Silhouette batch (condition & batches)"] = np.array([silhouette_condition_scdisinfact])
-# scores_scdisinfact["Silhouette batch (condition & celltype)"] = np.array([silhouette_condition_scdisinfact2])
 
-scores_scdisinfact["methods"] = np.array(["scDisInFact"])
-
-scores_scinsight = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "GC (common)", "GC (condition)"])
+scores_scinsight = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "Silhouette batch (common)", "Silhouette batch (condition & batches)"])
+scores_scinsight["methods"] = np.array(["scINSIGHT"])
 scores_scinsight["NMI (common)"] = np.array([max(nmi_cluster_scinsight)])
 scores_scinsight["ARI (common)"] = np.array([max(ari_cluster_scinsight)])
-scores_scinsight["GC (common)"] = np.array([gc_cluster_scinsight])
 scores_scinsight["Silhouette batch (common)"] = np.array([silhouette_batch_scinsight])
-
 scores_scinsight["NMI (condition)"] = np.array([max(nmi_condition_scinsight)])
 scores_scinsight["ARI (condition)"] = np.array([max(ari_condition_scinsight)])
-scores_scinsight["GC (condition)"] = np.array([gc_condition_scinsight])
 scores_scinsight["Silhouette batch (condition & batches)"] = np.array([silhouette_condition_scinsight])
-# scores_scinsight["Silhouette batch (condition & celltype)"] = np.array([silhouette_condition_scinsight2])
-
-scores_scinsight["methods"] = np.array(["scINSIGHT"])
 
 scores = pd.concat([scores_scdisinfact, scores_scinsight], axis = 0)
 scores.to_csv(result_dir + comment + "score_disentangle.csv")
@@ -351,7 +330,7 @@ from matplotlib.ticker import FormatStrFormatter
 plt.rcParams["font.size"] = 15
 scores = pd.read_csv(result_dir + comment + "score_disentangle.csv", index_col = 0)
 fig = plt.figure(figsize = (15,5))
-ax = fig.subplots(nrows = 1, ncols = 4)
+ax = fig.subplots(nrows = 1, ncols = 3)
 sns.barplot(data = scores, x = "methods", y = "NMI (common)", ax = ax[0], width = 0.5)
 ax[0].set_ylabel("NMI")
 ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
@@ -366,26 +345,19 @@ ax[1].set_title("ARI (shared)")
 ax[1].set_xlabel(None)
 show_values(ax[1])
 
-sns.barplot(data = scores, x = "methods", y = "GC (common)", ax = ax[2], width = 0.5)
-ax[2].set_ylabel("GC")
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (common)", ax = ax[2], width = 0.5)
+ax[2].set_ylabel("Silhouette batch")
 ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-ax[2].set_title("GC (shared)")
+ax[2].set_title("Silhouette batch\n(shared)")
+ax[2].set_ylim(0.8, 1)
 ax[2].set_xlabel(None)
 show_values(ax[2])
-
-sns.barplot(data = scores, x = "methods", y = "Silhouette batch (common)", ax = ax[3], width = 0.5)
-ax[3].set_ylabel("Silhouette batch")
-ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-ax[3].set_title("Silhouette batch\n(shared)")
-ax[3].set_ylim(0.8, 1)
-ax[3].set_xlabel(None)
-show_values(ax[3])
 
 plt.tight_layout()
 fig.savefig(result_dir + comment + "barplot_common.png", bbox_inches = "tight")
 
 fig = plt.figure(figsize = (15,5))
-ax = fig.subplots(nrows = 1, ncols = 4)
+ax = fig.subplots(nrows = 1, ncols = 3)
 sns.barplot(data = scores, x = "methods", y = "NMI (condition)", ax = ax[0], width = 0.5)
 ax[0].set_ylabel("NMI")
 ax[0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
@@ -400,25 +372,12 @@ ax[1].set_title("ARI (condition)")
 ax[1].set_xlabel(None)
 show_values(ax[1])
 
-sns.barplot(data = scores, x = "methods", y = "GC (condition)", ax = ax[2], width = 0.5)
-ax[2].set_ylabel("GC")
+sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[2], width = 0.5)
+ax[2].set_ylabel("ASW-batch")
 ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-ax[2].set_title("GC (condition)")
+ax[2].set_title("Silhouette batch\n(condition & batches)")
 ax[2].set_xlabel(None)
 show_values(ax[2])
-
-# sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & celltype)", ax = ax[3])
-# ax[3].set_ylabel("ASW-batch")
-# ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-# ax[3].set_title("Silhouette batch\n(condition & celltype)")
-# ax[3].set_xlabel(None)
-
-sns.barplot(data = scores, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[3], width = 0.5)
-ax[3].set_ylabel("ASW-batch")
-ax[3].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-ax[3].set_title("Silhouette batch\n(condition & batches)")
-ax[3].set_xlabel(None)
-show_values(ax[3])
 
 plt.tight_layout()
 fig.savefig(result_dir + comment + "barplot_condition.png", bbox_inches = "tight")
@@ -452,7 +411,7 @@ plt.tight_layout()
 fig.savefig(result_dir + comment + "barplot_disentangle.png", bbox_inches = "tight")
 
 
-assert False
+
 # In[] 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 #

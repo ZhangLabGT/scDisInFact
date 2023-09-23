@@ -110,7 +110,7 @@ counts_gt_test = []
 counts_test = []
 meta_cells = []
 # worst case: missing=4, one matrix for each condition
-missing = 4
+missing = 3
 for batch_id in range(n_batches):
     # generate permutation
     permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
@@ -273,7 +273,7 @@ reg_class = 1
 reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
-Ks = [8, 4, 4]
+Ks = [8, 2, 2]
 
 batch_size = 64
 nepochs = 50

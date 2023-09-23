@@ -105,20 +105,15 @@ simulated_lists = [
  ]
 
 ablation = "class"
-if ablation == "contr":
-    result_dir = "./results_simulated/ablation/contrastive/"
-elif ablation == "gl":
+if ablation == "gl":
     regs = [0, 0.01, 0.1, 1]
-    result_dir = "./results_simulated/ablation/group_lasso_new/"
-elif ablation == "tc":
-    regs = [0, 1]
-    result_dir = "./results_simulated/ablation/total_correlation/"
+    result_dir = "./results_simulated/ablation/group_lasso/"
 elif ablation == "mmd":
     regs = [0, 1e-4]
-    result_dir = "./results_simulated/ablation/MMD_new/"
+    result_dir = "./results_simulated/ablation/MMD/"
 elif ablation == "class":
     regs = [0, 0.01, 0.1, 1]
-    result_dir = "./results_simulated/ablation/class_new/"
+    result_dir = "./results_simulated/ablation/class/"
 
 # In[]
 print("# -------------------------------------------------------------------------------------------")
@@ -208,7 +203,7 @@ for dataset_dir in simulated_lists:
     reg_class = 1
     reg_gl = 1
 
-    Ks = [8, 4, 4]
+    Ks = [8, 2, 2]
     batch_size = 64
     nepochs = 50
     interval = 10

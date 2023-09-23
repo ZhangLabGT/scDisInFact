@@ -25,7 +25,7 @@ from sklearn.metrics import r2_score
 # In[]
 sigma = 0.4
 n_diff_genes = 100
-diff = 4
+diff = 8
 ngenes = 500
 ncells_total = 10000 
 n_batches = 2
@@ -117,7 +117,7 @@ reg_class = 1
 reg_gl = 1
 # mmd, cross_entropy, total correlation, group_lasso, kl divergence, 
 lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl]
-Ks = [8, 4, 4]
+Ks = [8, 2, 2]
 
 batch_size = 64
 nepochs = 50
