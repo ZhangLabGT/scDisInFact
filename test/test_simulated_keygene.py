@@ -7,6 +7,7 @@ sys.path.append("..")
 import scDisInFact.model as scdisinfact
 import scDisInFact.utils as utils
 import scDisInFact.bmk as bmk
+from scipy.stats import pearsonr, spearmanr, kendalltau
 
 from umap import UMAP
 import time
@@ -83,6 +84,7 @@ for dataset_dir in simulated_lists:
     # ground truth 
     gt = np.zeros((1, ngenes))
     gt[:,ndiff_genes:(2*ndiff_genes)] = 1
+    gt = gt.squeeze()
     # gt[:,:ndiff_genes] = 1
 
     auprc_dict = pd.concat([auprc_dict,
@@ -90,6 +92,9 @@ for dataset_dir in simulated_lists:
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(inf, gt)], 
                                     "AUPRC ratio": [bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(inf, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(inf, gt)],
+                                    "Pearson": [pearsonr(inf, gt)[0]],
                                     "method": ["scDisInFact"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -107,12 +112,16 @@ for dataset_dir in simulated_lists:
     H_var = np.mean((H - H_mean) ** 2, axis = 1)
     # normalize
     H_var = H_var/np.max(H_var)
+    H_var = H_var.squeeze()
 
     auprc_dict = pd.concat([auprc_dict,
                             pd.DataFrame.from_dict({"dataset": [dataset_dir], 
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(H_var, gt)],
                                     "AUPRC ratio": [bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(H_var, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(H_var, gt)],
+                                    "Pearson": [pearsonr(H_var, gt)[0]],
                                     "method": ["scINSIGHT"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -129,12 +138,16 @@ for dataset_dir in simulated_lists:
     assert np.min(pvals) >= 0
     # scale to 0-1
     score_wilcoxon = 1 - pvals/np.max(pvals)
+    score_wilcoxon  = score_wilcoxon.squeeze()
 
     auprc_dict = pd.concat([auprc_dict,
                             pd.DataFrame.from_dict({"dataset": [dataset_dir], 
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(score_wilcoxon, gt)],
                                     "AUPRC ratio": [bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(score_wilcoxon, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(score_wilcoxon, gt)],
+                                    "Pearson": [pearsonr(score_wilcoxon, gt)[0]],
                                     "method": ["Wilcoxon"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -150,12 +163,16 @@ for dataset_dir in simulated_lists:
     # ground truth 
     gt = np.zeros((1, ngenes))
     gt[:,:ndiff_genes] = 1
+    gt = gt.squeeze()
 
     auprc_dict = pd.concat([auprc_dict,
                             pd.DataFrame.from_dict({"dataset": [dataset_dir], 
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(inf, gt)], 
                                     "AUPRC ratio": [bmk.compute_auprc(inf, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(inf, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(inf, gt)],
+                                    "Pearson": [pearsonr(inf, gt)[0]],
                                     "method": ["scDisInFact"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -173,12 +190,16 @@ for dataset_dir in simulated_lists:
     H_var = np.mean((H - H_mean) ** 2, axis = 1)
     # normalize
     H_var = H_var/np.max(H_var)
+    H_var = H_var.squeeze()
 
     auprc_dict = pd.concat([auprc_dict,
                             pd.DataFrame.from_dict({"dataset": [dataset_dir], 
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(H_var, gt)],
                                     "AUPRC ratio": [bmk.compute_auprc(H_var, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(H_var, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(H_var, gt)],
+                                    "Pearson": [pearsonr(H_var, gt)[0]],
                                     "method": ["scINSIGHT"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -196,12 +217,16 @@ for dataset_dir in simulated_lists:
     assert np.min(pvals) >= 0
     # scale to 0-1
     score_wilcoxon = 1 - pvals/np.max(pvals)
+    score_wilcoxon = score_wilcoxon.squeeze()
 
     auprc_dict = pd.concat([auprc_dict,
                             pd.DataFrame.from_dict({"dataset": [dataset_dir], 
                                     "ndiff_genes": [ndiff_genes], 
                                     "AUPRC": [bmk.compute_auprc(score_wilcoxon, gt)],
                                     "AUPRC ratio": [bmk.compute_auprc(score_wilcoxon, gt)/(ndiff_genes/ngenes)],
+                                    "AUROC": [bmk.compute_auroc(score_wilcoxon, gt)],
+                                    "Eprec": [bmk.compute_earlyprec(score_wilcoxon, gt)],
+                                    "Pearson": [pearsonr(score_wilcoxon, gt)[0]],
                                     "method": ["Wilcoxon"],
                                     "ndiff": [ndiff]
                                     })], axis = 0, ignore_index = True)
@@ -231,5 +256,40 @@ for i in ax.containers:
 
 fig.savefig("./results_simulated/disentangle/AUPRC (ndiffs).png", bbox_inches = "tight")
 
+# In[]
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (7,5))
+ax = fig.add_subplot()
+ax = sns.barplot(x='ndiff', y='AUROC', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
+ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax.set_xlabel("Perturbation parameters")
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
+
+fig.savefig("./results_simulated/disentangle/AUROC (ndiffs).png", bbox_inches = "tight")
+
+# In[]
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (7,5))
+ax = fig.add_subplot()
+ax = sns.barplot(x='ndiff', y='Eprec', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
+ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax.set_xlabel("Perturbation parameters")
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
+
+fig.savefig("./results_simulated/disentangle/Eprec (ndiffs).png", bbox_inches = "tight")
+
+# In[]
+plt.rcParams["font.size"] = 15
+fig = plt.figure(figsize = (7,5))
+ax = fig.add_subplot()
+ax = sns.barplot(x='ndiff', y='Pearson', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
+ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax.set_xlabel("Perturbation parameters")
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.2f')    
+
+fig.savefig("./results_simulated/disentangle/Pearson (ndiffs).png", bbox_inches = "tight")
 
 # %%
