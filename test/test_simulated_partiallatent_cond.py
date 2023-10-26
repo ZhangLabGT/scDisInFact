@@ -1,3 +1,4 @@
+# In[]
 import sys, os
 import time
 import torch
@@ -53,6 +54,7 @@ interval = 10
 lr = 5e-4
 
 
+# In[]
 for dataset_dir in simulated_lists:
 
     print("# -------------------------------------------------------------------------------------------")
@@ -480,6 +482,7 @@ for dataset_dir in simulated_lists:
     scores_all.to_csv(result_dir + "score_all.csv")
 
 
+# In[]
 if True:
     scores_all_datasets = pd.DataFrame(columns = ["methods", "NMI (common)", "ARI (common)", "NMI (condition)", "ARI (condition)", "Silhouette batch (common)", "Silhouette batch (condition & batches)"])
 
@@ -521,9 +524,9 @@ if True:
     ax[1].set_xlabel(None)
 
     sns.boxplot(data = scores_all_datasets, x = "methods", y = "Silhouette batch (common)", ax = ax[2])
-    ax[2].set_ylabel("Silhouette batch")
+    ax[2].set_ylabel("ASW-batch")
     ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    ax[2].set_title("Silhouette batch\n(shared)")
+    ax[2].set_title("ASW-batch\n(shared)")
     ax[2].set_ylim(0.8, 1)
     ax[2].set_xlabel(None)
 
@@ -547,14 +550,14 @@ if True:
     sns.boxplot(data = scores_all_datasets, x = "methods", y = "Silhouette batch (condition & batches)", ax = ax[2])
     ax[2].set_ylabel("ASW-batch")
     ax[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    ax[2].set_title("Silhouette batch\n(condition & batches)")
+    ax[2].set_title("ASW-batch\n(condition & batches)")
     ax[2].set_xlabel(None)
 
     plt.tight_layout()
     fig.savefig(result_dir + "boxplot_condition.png", bbox_inches = "tight")
 
 if True:
-    fig = plt.figure(figsize = (15,5))
+    fig = plt.figure(figsize = (12,5))
     ax = fig.subplots(nrows = 1, ncols = 2)
 
     sns.boxplot(data = scores_all_datasets, x = "methods", y = "ARI (common)", ax = ax[0])
@@ -566,9 +569,9 @@ if True:
 
     sns.boxplot(data = scores_all_datasets, x = "methods", y = "Silhouette batch (common)", ax = ax[1])
     sns.stripplot(data = scores_all_datasets, x = "methods", y = "Silhouette batch (common)", ax = ax[1], color = "black", dodge = True) 
-    ax[1].set_ylabel("Silhouette batch")
+    ax[1].set_ylabel("ASW-batch")
     ax[1].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-    ax[1].set_title("Silhouette batch\n(shared)")
+    ax[1].set_title("ASW-batch\n(shared)")
     ax[1].set_ylim(0.8, 1)
     ax[1].set_xlabel(None)
 
@@ -576,3 +579,5 @@ if True:
     fig.savefig(result_dir + "boxplot.png", bbox_inches = "tight")
 
 
+
+# %%

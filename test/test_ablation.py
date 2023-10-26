@@ -104,7 +104,7 @@ simulated_lists = [
   "2conds_base_10000_500_0.4_100_8",
  ]
 
-ablation = "class"
+ablation = "mmd"
 if ablation == "gl":
     regs = [0, 0.01, 0.1, 1]
     result_dir = "./results_simulated/ablation/group_lasso/"
@@ -553,7 +553,10 @@ if ablation in ["gl", "class"]:
     scores_prediction = scores_prediction.loc[(scores_prediction["Method"] == "reg: 0") | (scores_prediction["Method"] == "reg: 1"),:]
     auprc_dict = auprc_dict.loc[(auprc_dict["Method"] == "reg: 0") | (auprc_dict["Method"] == "reg: 1"),:]
     scores_disentangle = scores_disentangle.loc[(scores_disentangle["method"] == "reg: 0") | (scores_disentangle["method"] == "reg: 1"),:]
-
+elif ablation in ["mmd"]:
+    scores_prediction = scores_prediction.loc[(scores_prediction["Method"] == "reg: 0") | (scores_prediction["Method"] == "reg: 0.0001"),:]
+    auprc_dict = auprc_dict.loc[(auprc_dict["Method"] == "reg: 0") | (auprc_dict["Method"] == "reg: 0.0001"),:]
+    scores_disentangle = scores_disentangle.loc[(scores_disentangle["method"] == "reg: 0") | (scores_disentangle["method"] == "reg: 0.0001"),:]
 scores_prediction = scores_prediction[scores_prediction["Prediction"].isin(["ctrl_healthy_0", "stim_healthy_0", "stim_severe_0"])]
 
 fig = plt.figure(figsize = (20,5))
@@ -562,34 +565,38 @@ ax = sns.barplot(x='method', y="ASW (indep conds)", data=scores_disentangle, ax 
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')  
 # ax.set_ylim(0.3, 0.6) 
-ax.set_ylabel("ASW")
+ax.set_ylabel("ASW-batch")
 ax.set_xlabel(None)
-ax.set_title("Indep (unshared factors)")
+# ax.set_title("Indep (unshared factors)")
+ax.set_title("Unshared-bio factors of different\ncondition types")
 ax = sns.barplot(x='method', y="ASW (indep batch&comm)", data=scores_disentangle, ax = axs[1], ci = None) 
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')  
 ax.set_ylim(0.6, 1.0) 
-ax.set_ylabel("ASW")
+ax.set_ylabel("ASW-batch")
 ax.set_xlabel(None)
-ax.set_title("Indep (batch & shared factor)")
+# ax.set_title("Indep (batch & shared factor)")
+ax.set_title("Shared-bio factors & batch")
 ax = sns.barplot(x='method', y="ASW (indep batch&cond)", data=scores_disentangle, ax = axs[2], ci = None) 
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')  
 ax.set_ylim(0.6, 1.0) 
-ax.set_ylabel("ASW")
+ax.set_ylabel("ASW-batch")
 ax.set_xlabel(None)
-ax.set_title("Indep (batch & unshared factor)")
+# ax.set_title("Indep (batch & unshared factor)")
+ax.set_title("Unshared-bio factors & batch")
 ax = sns.barplot(x='method', y="ASW (indep cond&comm)", data=scores_disentangle, ax = axs[3], ci = None)
 for i in ax.containers:
     ax.bar_label(i, fmt='%.2f')   
 ax.set_ylim(0.6, 1.0) 
-ax.set_ylabel("ASW")
+ax.set_ylabel("ASW-batch")
 ax.set_xlabel(None)
-ax.set_title("Indep (unshared & shared factor)")
+# ax.set_title("Indep (unshared & shared factor)")
+ax.set_title("Shared-bio & condition")
 plt.tight_layout()
 fig.savefig(result_dir + "scores_disentangle.png", bbox_inches = "tight")
 
-fig = plt.figure(figsize = (12,5))
+fig = plt.figure(figsize = (8,5))
 # ax = fig.subplots(nrows = 1, ncols = 3)
 ax = fig.add_subplot()
 ax = sns.barplot(x='Prediction', y='MSE', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1) 
@@ -601,7 +608,7 @@ for i in ax.containers:
 ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.savefig(result_dir + "prediction_MSE_ratio.png", bbox_inches = "tight")
 
-fig = plt.figure(figsize = (12,5))
+fig = plt.figure(figsize = (8,5))
 ax = fig.add_subplot()
 ax = sns.barplot(x='Prediction', y='AUPRC', hue='Method', data=scores_prediction, ax = ax, ci = None) # , errwidth=1, capsize = 0.1) 
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
@@ -612,7 +619,7 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.savefig(result_dir + "prediction_AUPRC.png", bbox_inches = "tight")
 
-fig = plt.figure(figsize = (12,5))
+fig = plt.figure(figsize = (8,5))
 ax = fig.add_subplot()
 ax = sns.barplot(x='Prediction', y='AUPRC (cell-level)', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1) 
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
@@ -623,7 +630,7 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.savefig(result_dir + "prediction_AUPRC(cell_level).png", bbox_inches = "tight")
 
-fig = plt.figure(figsize = (12,5))
+fig = plt.figure(figsize = (8,5))
 ax = fig.add_subplot()
 ax = sns.barplot(x='Prediction', y='R2', hue='Method', data=scores_prediction, ax = ax, ci = None) #, errwidth=1, capsize = 0.1)
 for i in ax.containers:
@@ -637,7 +644,7 @@ ax.set_xticklabels(["Treatment", "Severity", "Treatment\n& Severity"])
 fig.tight_layout()
 fig.savefig(result_dir + "prediction_R2_ratio.png", bbox_inches = "tight")
 
-fig = plt.figure(figsize = (12,5))
+fig = plt.figure(figsize = (8,5))
 ax = fig.add_subplot()
 ax = sns.barplot(x = "ndiff", hue = 'Method', y ='AUPRC', data=auprc_dict, ax = ax, ci = None)#, errwidth=1, capsize = 0.1)
 ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))

@@ -99,7 +99,7 @@ simulated_lists = [
   "2conds_base_10000_500_0.4_100_8",
  ]
 
-ablation = "latent_dims"
+ablation = "mmd"
 if ablation == "gl":
     regs = [0, 0.01, 0.1, 1, 5]
     result_dir = "./results_simulated/ablation/group_lasso/"
@@ -545,7 +545,6 @@ for dataset_dir in simulated_lists:
 auprc_dict.to_csv(result_dir + "/CKG_scores.txt", sep = "\t")
 
 
-assert False
 # In[]
 print("# ----------------------------------------------------------------------------------")
 print("#")

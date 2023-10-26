@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 warnings.filterwarnings('ignore')
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 from sklearn.metrics import r2_score 
 
@@ -35,7 +35,6 @@ if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
 # TODO: randomly remove some celltypes?
-counts_gt = []
 counts_ctrl_healthy = []
 counts_ctrl_severe = []
 counts_stim_healthy = []
@@ -44,7 +43,6 @@ counts_stim_severe = []
 label_annos = []
 
 for batch_id in range(n_batches):
-    counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
     counts_ctrl_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_healthy.txt', sep = "\t", header = None).values.T)
     counts_ctrl_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_severe.txt', sep = "\t", header = None).values.T)
     counts_stim_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_healthy.txt', sep = "\t", header = None).values.T)
@@ -61,30 +59,51 @@ print("# In-sample test")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
 np.random.seed(0)
-counts_gt_test = []
-counts_test = []
-meta_cells = []
+counts_train = []
+metas_train = []
+# counts_gt_train = []
+# metas_gt_train = []
 for batch_id in range(n_batches):
+    ncells = counts_ctrl_severe[batch_id].shape[0]
     # generate permutation
-    permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
+    permute_idx = np.random.permutation(ncells)
     # since there are totally four combinations of conditions, separate the cells into four groups
-    chuck_size = int(counts_gt[batch_id].shape[0]/4)
-    counts_gt_test.append(counts_gt[batch_id][permute_idx,:])
-
-    counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                       counts_ctrl_severe[batch_id][permute_idx[chuck_size:(2*chuck_size)],:], 
-                                       counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                       counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-
+    chunk_size = int(ncells/4)
+    # original gt
+    # counts_gt_train.append(np.concatenate([counts_ctrl_severe[batch_id][permute_idx[:chunk_size],:],
+    #                                        counts_ctrl_severe[batch_id][permute_idx[chunk_size:(2*chunk_size)],:],
+    #                                        counts_ctrl_severe[batch_id][permute_idx[(2*chunk_size):(3*chunk_size)],:],
+    #                                        counts_ctrl_severe[batch_id][permute_idx[(3*chunk_size):],:]], axis = 0))
     
-    meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-    meta_cell["batch"] = np.array([batch_id] * counts_gt[batch_id].shape[0])
-    meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-    meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["severe"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-    meta_cell["annos"] = label_annos[batch_id][permute_idx]
-    meta_cells.append(meta_cell)
+    # meta_gt_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+    # meta_gt_train["batch"] = np.array([batch_id] * ncells)
+    # meta_gt_train["condition 1"] = np.array(["ctrl"] * chunk_size + ["ctrl"] * chunk_size + ["ctrl"] * chunk_size + ["ctrl"] * (ncells - 3*chunk_size))
+    # meta_gt_train["condition 2"] = np.array(["severe"] * chunk_size + ["severe"] * chunk_size + ["severe"] * chunk_size + ["severe"] * (ncells - 3*chunk_size))
+    # meta_gt_train["annos"] = label_annos[batch_id][permute_idx]
+    # metas_gt_train.append(meta_gt_train)
 
-data_dict_full = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
+    counts_train.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chunk_size],:], 
+                                       counts_ctrl_severe[batch_id][permute_idx[chunk_size:(2*chunk_size)],:], 
+                                       counts_stim_healthy[batch_id][permute_idx[(2*chunk_size):(3*chunk_size)],:], 
+                                       counts_stim_severe[batch_id][permute_idx[(3*chunk_size):],:]], axis = 0))
+
+    meta_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+    meta_train["batch"] = np.array([batch_id] * ncells)
+    meta_train["condition 1"] = np.array(["ctrl"] * chunk_size + ["ctrl"] * chunk_size + ["stim"] * chunk_size + ["stim"] * (ncells - 3*chunk_size))
+    meta_train["condition 2"] = np.array(["healthy"] * chunk_size + ["severe"] * chunk_size + ["healthy"] * chunk_size + ["severe"] * (ncells - 3*chunk_size))
+    meta_train["annos"] = label_annos[batch_id][permute_idx]
+    metas_train.append(meta_train)
+
+counts_train = np.concatenate(counts_train, axis = 0)
+metas_train = pd.concat(metas_train, axis = 0)
+
+counts_gt_train = counts_ctrl_severe[0]
+metas_gt_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+metas_gt_train["batch"] = np.array([0] * counts_gt_train.shape[0])
+metas_gt_train["condition 1"] = np.array(["ctrl"] * counts_gt_train.shape[0])
+metas_gt_train["condition 2"] = np.array(["severe"] * counts_gt_train.shape[0])
+metas_gt_train["annos"] = label_annos[0]
+data_dict_train = scdisinfact.create_scdisinfact_dataset(counts_train, metas_train, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 
 
 # In[]
@@ -124,13 +143,13 @@ nepochs = 50
 interval = 10
 lr = 5e-4
 
-model = scdisinfact.scdisinfact(data_dict = data_dict_full, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
+model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
                                 reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
-_ = model.eval()
-torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}.pth")
+# model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+# _ = model.eval()
+# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}.pth", map_location = device))
 
 # In[] Plot results
@@ -195,509 +214,108 @@ model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}.pth", m
 
 
 # In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 1. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
+configs_input = [{"condition 1": "stim", "condition 2": "severe", "batch": 0, "type": "Condition 1\n(w/o batch effect)"},
+                {"condition 1": "ctrl", "condition 2": "healthy", "batch": 0, "type": "Condition 2\n(w/o batch effect)"},
+                {"condition 1": "stim", "condition 2": "healthy", "batch": 0, "type": "Condition 1&2\n(w/o batch effect)"},
+                {"condition 1": "stim", "condition 2": "severe", "batch": 1, "type": "Condition 1\n(w/ batch effect)"},
+                {"condition 1": "ctrl", "condition 2": "healthy", "batch": 1, "type": "Condition 2\n(w/ batch effect)"},
+                {"condition 1": "stim", "condition 2": "healthy", "batch": 1, "type": "Condition 1&2\n(w/ batch effect)"}]
 
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
+score_cluster_list = []
+# score_list = []
 
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
+for config in configs_input:
+    print("input condition: " + str(config))
 
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+    # load input and gt count matrices
+    idx = ((metas_train["condition 1"] == config["condition 1"]) & (metas_train["condition 2"] == config["condition 2"]) & (metas_train["batch"] == config["batch"])).values
+    counts_input = counts_train[idx,:]
+    meta_input = metas_train.loc[idx,:]
+    counts_gt = counts_gt_train
+    meta_gt = metas_gt_train
 
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+    # predict count
+    counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                    batch_key = "batch", predict_conds = None, predict_batch = None)
 
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores1 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores1["MSE"] = mses_scdisinfact
-scores1["MSE input"] = mses_input
-scores1["Pearson"] = pearsons_scdisinfact
-scores1["Pearson input"] = pearsons_input
-scores1["R2"] = r2_scdisinfact
-scores1["R2 input"] = r2_input
-scores1["Method"] = "scDisInFact"
-scores1["Prediction"] = "Condition 1\n(w/o batch effect)"
+    counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                        batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
 
 
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 2. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
+    # normalize the count
+    counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+    counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+    counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+    counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
 
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
+    # no 1-1 match, check cell-type level scores
+    unique_celltypes = np.unique(meta_gt["annos"].values)
+    mean_inputs = []
+    mean_predicts = []
+    mean_gts = []
+    mean_gts_denoised = []
+    for celltype in unique_celltypes:
+        mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_inputs.append(mean_input)
+        mean_predicts.append(mean_predict)
+        mean_gts.append(mean_gt)
+        mean_gts_denoised.append(mean_gt_denoised)
 
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+    mean_inputs = np.array(mean_inputs)
+    mean_predicts = np.array(mean_predicts)
+    mean_gts = np.array(mean_gts)
+    mean_gts_denoised = np.array(mean_gts_denoised)
 
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+    # cell-type-specific normalized MSE
+    mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+    mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+    # cell-type-specific pearson correlation
+    pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+    pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+    # cell-type-specific R2 score
+    r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+    r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
+    score_cluster = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+    score_cluster["MSE"] = mses_scdisinfact
+    score_cluster["MSE input"] = mses_input
+    score_cluster["Pearson"] = pearsons_scdisinfact
+    score_cluster["Pearson input"] = pearsons_input
+    score_cluster["R2"] = r2_scdisinfact
+    score_cluster["R2 input"] = r2_input
+    score_cluster["Method"] = "scDisInFact"
+    score_cluster["Prediction"] = config["type"]
+    score_cluster_list.append(score_cluster)
 
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+    # cannot calculate cell level MSE across batches
+    # mses_input = np.sum((counts_input - counts_gt_denoised) ** 2, axis = 1)
+    # mses_scdisinfact = np.sum((counts_predict - counts_gt_denoised) ** 2, axis = 1)
+    # # vector storing the pearson correlation for all cells
+    # pearson_input = np.array([stats.pearsonr(counts_input[i,:], counts_gt_denoised[i,:])[0] for i in range(counts_gt_denoised.shape[0])])
+    # pearsons_scdisinfact = np.array([stats.pearsonr(counts_predict[i,:], counts_gt_denoised[i,:])[0] for i in range(counts_gt_denoised.shape[0])])
+    # # vector storing the R2 scores for all cells
+    # r2_input = np.array([r2_score(y_pred = counts_input[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
+    # r2_scdisinfact = np.array([r2_score(y_pred = counts_predict[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
 
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
+    # score = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "AUPRC", "AUPRC (cell-level)", "Method", "Prediction"])
+    # score["MSE"] = mses_scdisinfact
+    # score["MSE input"] = mses_input
+    # score["Pearson"] = pearsons_scdisinfact
+    # score["Pearson input"] = pearson_input
+    # score["R2"] = r2_scdisinfact
+    # score["R2 input"] = r2_input
+    # score["Method"] = "scDisInFact"
+    # score["Prediction"] = config["type"]
+    # score_list.append(score)
 
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
+scores_cluster = pd.concat(score_cluster_list, axis = 0)
+scores_cluster.to_csv(result_dir + "scores_cluster_full.csv")
 
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores2 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores2["MSE"] = mses_scdisinfact
-scores2["MSE input"] = mses_input
-scores2["Pearson"] = pearsons_scdisinfact
-scores2["Pearson input"] = pearsons_input
-scores2["R2"] = r2_scdisinfact
-scores2["R2 input"] = r2_input
-scores2["Method"] = "scDisInFact"
-scores2["Prediction"] = "Condition 2\n(w/o batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 3. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores3["MSE"] = mses_scdisinfact
-scores3["MSE input"] = mses_input
-scores3["Pearson"] = pearsons_scdisinfact
-scores3["Pearson input"] = pearsons_input
-scores3["R2"] = r2_scdisinfact
-scores3["R2 input"] = r2_input
-scores3["Method"] = "scDisInFact"
-scores3["Prediction"] = "Condition 1&2\n(w/o batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 4. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores4["MSE"] = mses_scdisinfact
-scores4["MSE input"] = mses_input
-scores4["Pearson"] = pearsons_scdisinfact
-scores4["Pearson input"] = pearsons_input
-scores4["R2"] = r2_scdisinfact
-scores4["R2 input"] = r2_input
-scores4["Method"] = "scDisInFact"
-scores4["Prediction"] = "Condition 1\n(w/ batch effect)"
-
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 5. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores5 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores5["MSE"] = mses_scdisinfact
-scores5["MSE input"] = mses_input
-scores5["Pearson"] = pearsons_scdisinfact
-scores5["Pearson input"] = pearsons_input
-scores5["R2"] = r2_scdisinfact
-scores5["R2 input"] = r2_input
-scores5["Method"] = "scDisInFact"
-scores5["Prediction"] = "Condition 2\n(w/ batch effect)"
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 6. Training: all input matrices. Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# ground truth (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores6 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores6["MSE"] = mses_scdisinfact
-scores6["MSE input"] = mses_input
-scores6["Pearson"] = pearsons_scdisinfact
-scores6["Pearson input"] = pearsons_input
-scores6["R2"] = r2_scdisinfact
-scores6["R2 input"] = r2_input
-scores6["Method"] = "scDisInFact"
-scores6["Prediction"] = "Condition 1&2\n(w/ batch effect)"
-
-# In[]
-scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
-scores.to_csv(result_dir + "scores_full.csv")
-
+# scores = pd.concat(score_list, axis = 0)
+# scores.to_csv(result_dir + "scores_full.csv")
 
 # In[]
 print("# -------------------------------------------------------------------------------------------")
@@ -705,7 +323,6 @@ print("#")
 print("# Out-of-sample test")
 print("#")
 print("# -------------------------------------------------------------------------------------------")
-counts_gt = []
 counts_ctrl_healthy = []
 counts_ctrl_severe = []
 counts_stim_healthy = []
@@ -714,7 +331,6 @@ counts_stim_severe = []
 label_annos = []
 
 for batch_id in range(n_batches):
-    counts_gt.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_true.txt', sep = "\t", header = None).values.T)
     counts_ctrl_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_healthy.txt', sep = "\t", header = None).values.T)
     counts_ctrl_severe.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_ctrl_severe.txt', sep = "\t", header = None).values.T)
     counts_stim_healthy.append(pd.read_csv(data_dir + f'GxC{batch_id + 1}_stim_healthy.txt', sep = "\t", header = None).values.T)
@@ -726,572 +342,169 @@ for batch_id in range(n_batches):
 
 # NOTE: select counts for each batch
 np.random.seed(0)
-counts_gt_test = []
-counts_test = []
-meta_cells = []
+counts_train = []
+metas_train = []
+# counts_gt_train = []
+# metas_gt_train = []
 
 for batch_id in range(n_batches):
+    ncells = counts_ctrl_severe[batch_id].shape[0]
     # generate permutation
-    permute_idx = np.random.permutation(counts_gt[batch_id].shape[0])
+    permute_idx = np.random.permutation(ncells)
     # since there are totally four combinations of conditions, separate the cells into four groups
-    chuck_size = int(counts_gt[batch_id].shape[0]/4)
+    chuck_size = int(ncells/4)
 
-    if batch_id == 0:
-        counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                        counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                        counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-        # remove (ctrl, severe, batch 0)
-        counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
+    # Training data: remove (ctrl, severe) for all batches
+    counts_train.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
                                         counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
                                         counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+    meta_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+    meta_train["batch"] = np.array([batch_id] * chuck_size + [batch_id] * chuck_size + [batch_id] * (ncells - 3*chuck_size))
+    meta_train["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (ncells - 3*chuck_size))
+    meta_train["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (ncells - 3*chuck_size))
+    meta_train["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+                                            label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+                                            label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+    metas_train.append(meta_train)
 
-        meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-        meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-        meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-        meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-        meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                        label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
-                                        label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-        meta_cells.append(meta_cell)
-        
-    else:
-        counts_gt_test.append(np.concatenate([counts_gt[batch_id][permute_idx[:chuck_size],:], 
-                                        counts_gt[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                        counts_gt[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+    
+    # # Ground truth dataset
+    # counts_gt_train.append(np.concatenate([counts_ctrl_severe[batch_id][permute_idx[:chuck_size],:],
+    #                                     counts_ctrl_severe[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:],
+    #                                     counts_ctrl_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
+    # meta_gt_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+    # meta_gt_train["batch"] = np.array([batch_id] * chuck_size + [batch_id] * chuck_size + [batch_id] * (ncells - 3*chuck_size))
+    # meta_gt_train["condition 1"] = np.array(["ctrl"] * chuck_size + ["ctrl"] * chuck_size + ["ctrl"] * (ncells - 3*chuck_size))
+    # meta_gt_train["condition 2"] = np.array(["severe"] * chuck_size + ["severe"] * chuck_size + ["severe"] * (ncells - 3*chuck_size))
+    # meta_gt_train["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
+    #                                         label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
+    #                                         label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
+    # metas_gt_train.append(meta_gt_train)
 
-        # remove (ctrl, severe, batch 1), don't want to see the count corresponding to condition ctrl & severe
-        counts_test.append(np.concatenate([counts_ctrl_healthy[batch_id][permute_idx[:chuck_size],:], 
-                                        counts_stim_healthy[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)],:], 
-                                        counts_stim_severe[batch_id][permute_idx[(3*chuck_size):],:]], axis = 0))
-        
-        meta_cell = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
-        meta_cell["batch"] = np.array([batch_id] * counts_gt_test[batch_id].shape[0])
-        meta_cell["condition 1"] = np.array(["ctrl"] * chuck_size + ["stim"] * chuck_size + ["stim"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-        meta_cell["condition 2"] = np.array(["healthy"] * chuck_size + ["healthy"] * chuck_size + ["severe"] * (counts_gt[batch_id].shape[0] - 3*chuck_size))
-        meta_cell["annos"] = np.concatenate([label_annos[batch_id][permute_idx[:chuck_size]], 
-                                        label_annos[batch_id][permute_idx[(2*chuck_size):(3*chuck_size)]], 
-                                        label_annos[batch_id][permute_idx[(3*chuck_size):]]], axis = 0)
-        meta_cells.append(meta_cell)
+counts_train = np.concatenate(counts_train, axis = 0)
+metas_train = pd.concat(metas_train, axis = 0)
+counts_gt_train = counts_ctrl_severe[0]
+metas_gt_train = pd.DataFrame(columns = ["batch", "condition 1", "condition 2", "annos"])
+metas_gt_train["batch"] = np.array([0] * counts_gt_train.shape[0])
+metas_gt_train["condition 1"] = np.array(["ctrl"] * counts_gt_train.shape[0])
+metas_gt_train["condition 2"] = np.array(["severe"] * counts_gt_train.shape[0])
+metas_gt_train["annos"] = label_annos[0]
 
-data_dict = scdisinfact.create_scdisinfact_dataset(counts_test, meta_cells, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
+data_dict = scdisinfact.create_scdisinfact_dataset(counts_train, metas_train, condition_key = ["condition 1", "condition 2"], batch_key = "batch")
 
 model = scdisinfact.scdisinfact(data_dict = data_dict, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
                                 reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
 
 # train_joint is more efficient, but does not work as well compared to train
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
-_ = model.eval()
-torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_oos.pth")
+# model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+# _ = model.eval()
+# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_oos.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_oos.pth", map_location = device))
 
 
 # In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 1. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
+configs_input = [{"condition 1": "stim", "condition 2": "severe", "batch": 0, "type": "Condition 1\n(w/o batch effect)"},
+                {"condition 1": "ctrl", "condition 2": "healthy", "batch": 0, "type": "Condition 2\n(w/o batch effect)"},
+                {"condition 1": "stim", "condition 2": "healthy", "batch": 0, "type": "Condition 1&2\n(w/o batch effect)"},
+                {"condition 1": "stim", "condition 2": "severe", "batch": 1, "type": "Condition 1\n(w/ batch effect)"},
+                {"condition 1": "ctrl", "condition 2": "healthy", "batch": 1, "type": "Condition 2\n(w/ batch effect)"},
+                {"condition 1": "stim", "condition 2": "healthy", "batch": 1, "type": "Condition 1&2\n(w/ batch effect)"}]
 
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
+score_cluster_list = []
+score_list = []
 
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+for config in configs_input:
+    print("input condition: " + str(config))
 
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+    idx = ((metas_train["condition 1"] == config["condition 1"]) & (metas_train["condition 2"] == config["condition 2"]) & (metas_train["batch"] == config["batch"])).values
+    counts_input = counts_train[idx,:]
+    meta_input = metas_train.loc[idx,:]
+    counts_gt = counts_gt_train
+    meta_gt = metas_gt_train
 
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
+    counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
+                                    batch_key = "batch", predict_conds = None, predict_batch = None)
 
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
+    counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
+                                        batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
 
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
+    # normalize the count
+    counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
+    counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
+    counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
+    counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
 
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+    # no 1-1 match, check cell-type level scores
+    unique_celltypes = np.unique(meta_gt["annos"].values)
+    mean_inputs = []
+    mean_predicts = []
+    mean_gts = []
+    mean_gts_denoised = []
+    for celltype in unique_celltypes:
+        mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
+        
+        mean_inputs.append(mean_input)
+        mean_predicts.append(mean_predict)
+        mean_gts.append(mean_gt)
+        mean_gts_denoised.append(mean_gt_denoised)
+    mean_inputs = np.array(mean_inputs)
+    mean_predicts = np.array(mean_predicts)
+    mean_gts = np.array(mean_gts)
+    mean_gts_denoised = np.array(mean_gts_denoised)
 
-scores1 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores1["MSE"] = mses_scdisinfact
-scores1["MSE input"] = mses_input
-scores1["Pearson"] = pearsons_scdisinfact
-scores1["Pearson input"] = pearsons_input
-scores1["R2"] = r2_scdisinfact
-scores1["R2 input"] = r2_input
-scores1["Method"] = "scDisInFact"
-scores1["Prediction"] = "Condition 1\n(w/o batch effect)"
+    # cell-type-specific normalized MSE
+    mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
+    mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
+    # cell-type-specific pearson correlation
+    pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+    pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
+    # cell-type-specific R2 score
+    r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
+    r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
 
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 2. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-# input (ctrl, healthy, batch 0)
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
+    score_cluster = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
+    score_cluster["MSE"] = mses_scdisinfact
+    score_cluster["MSE input"] = mses_input
+    score_cluster["Pearson"] = pearsons_scdisinfact
+    score_cluster["Pearson input"] = pearsons_input
+    score_cluster["R2"] = r2_scdisinfact
+    score_cluster["R2 input"] = r2_input
+    score_cluster["Method"] = "scDisInFact"
+    score_cluster["Prediction"] = config["type"]
+    score_cluster_list.append(score_cluster)
 
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
+    # cannot calculate cell level MSE
+    # mses_input = np.sum((counts_input - counts_gt_denoised) ** 2, axis = 1)
+    # mses_scdisinfact = np.sum((counts_predict - counts_gt_denoised) ** 2, axis = 1)
+    # # vector storing the pearson correlation for all cells
+    # pearson_input = np.array([stats.pearsonr(counts_input[i,:], counts_gt_denoised[i,:])[0] for i in range(counts_gt_denoised.shape[0])])
+    # pearsons_scdisinfact = np.array([stats.pearsonr(counts_predict[i,:], counts_gt_denoised[i,:])[0] for i in range(counts_gt_denoised.shape[0])])
+    # # vector storing the R2 scores for all cells
+    # r2_input = np.array([r2_score(y_pred = counts_input[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
+    # r2_scdisinfact = np.array([r2_score(y_pred = counts_predict[i,:], y_true = counts_gt_denoised[i,:]) for i in range(counts_gt_denoised.shape[0])])
 
-# predict (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
+    # score = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "AUPRC", "AUPRC (cell-level)", "Method", "Prediction"])
+    # score["MSE"] = mses_scdisinfact
+    # score["MSE input"] = mses_input
+    # score["Pearson"] = pearsons_scdisinfact
+    # score["Pearson input"] = pearson_input
+    # score["R2"] = r2_scdisinfact
+    # score["R2 input"] = r2_input
+    # score["Method"] = "scDisInFact"
+    # score["Prediction"] = config["type"]
+    # score_list.append(score)
 
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
+scores_cluster = pd.concat(score_cluster_list, axis = 0)
+scores_cluster.to_csv(result_dir + "scores_cluster_oos.csv")
 
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
+# scores = pd.concat(score_list, axis = 0)
+# scores.to_csv(result_dir + "scores_oos.csv")
 
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores2 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores2["MSE"] = mses_scdisinfact
-scores2["MSE input"] = mses_input
-scores2["Pearson"] = pearsons_scdisinfact
-scores2["Pearson input"] = pearsons_input
-scores2["R2"] = r2_scdisinfact
-scores2["R2 input"] = r2_input
-scores2["Method"] = "scDisInFact"
-scores2["Prediction"] = "Condition 2\n(w/o batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 3. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 0).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-# input (ctrl, healthy, batch 0)
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 0)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# predict (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores3 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores3["MSE"] = mses_scdisinfact
-scores3["MSE input"] = mses_input
-scores3["Pearson"] = pearsons_scdisinfact
-scores3["Pearson input"] = pearsons_input
-scores3["R2"] = r2_scdisinfact
-scores3["R2 input"] = r2_input
-scores3["Method"] = "scDisInFact"
-scores3["Prediction"] = "Condition 1&2\n(w/o batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 4. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, severe, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-# input (ctrl, healthy, batch 1)
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# predict (stim, healthy, batch 1)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores4 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores4["MSE"] = mses_scdisinfact
-scores4["MSE input"] = mses_input
-scores4["Pearson"] = pearsons_scdisinfact
-scores4["Pearson input"] = pearsons_input
-scores4["R2"] = r2_scdisinfact
-scores4["R2 input"] = r2_input
-scores4["Method"] = "scDisInFact"
-scores4["Prediction"] = "Condition 1\n(w/ batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 5. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (ctrl, healthy, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-# input (ctrl, healthy, batch 1)
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# predict (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores5 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores5["MSE"] = mses_scdisinfact
-scores5["MSE input"] = mses_input
-scores5["Pearson"] = pearsons_scdisinfact
-scores5["Pearson input"] = pearsons_input
-scores5["R2"] = r2_scdisinfact
-scores5["R2 input"] = r2_input
-scores5["Method"] = "scDisInFact"
-scores5["Prediction"] = "Condition 2\n(w/ batch effect)"
-
-# In[]
-print("# -------------------------------------------------------------------------------------------")
-print("#")
-print("# 5. Training: all input matrices except (ctrl, severe, batch 0). Predict condition: (ctrl, severe, batch 0), input condition: (stim, healthy, batch 1).")
-print("#")
-print("# -------------------------------------------------------------------------------------------")
-counts_input = []
-meta_input = []
-# input (ctrl, healthy, batch 1)
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "stim") & (meta_cells["condition 2"] == "healthy") & (meta_cells["batch"] == 1)).values
-    counts_input.append(dataset.counts[idx,:].numpy())
-    meta_input.append(meta_cells.loc[idx,:])
-
-counts_input = np.concatenate(counts_input, axis = 0)
-meta_input = pd.concat(meta_input, axis = 0, ignore_index = True)
-counts_predict = model.predict_counts(input_counts = counts_input, meta_cells = meta_input, condition_keys = ["condition 1", "condition 2"], 
-                                      batch_key = "batch", predict_conds = ["ctrl", "severe"], predict_batch = 0)
-print("input:")
-print([x for x in np.unique(meta_input["batch_cond"].values)])
-
-# predict (ctrl, severe, batch 0)
-counts_gt = []
-meta_gt = []
-for dataset, meta_cells in zip(data_dict_full["datasets"], data_dict_full["meta_cells"]):
-    idx = ((meta_cells["condition 1"] == "ctrl") & (meta_cells["condition 2"] == "severe") & (meta_cells["batch"] == 0)).values
-    counts_gt.append(dataset.counts[idx,:].numpy())
-    meta_gt.append(meta_cells.loc[idx,:])
-
-counts_gt = np.concatenate(counts_gt, axis = 0)
-meta_gt = pd.concat(meta_gt, axis = 0, ignore_index = True)
-counts_gt_denoised = model.predict_counts(input_counts = counts_gt, meta_cells = meta_gt, condition_keys = ["condition 1", "condition 2"], 
-                                          batch_key = "batch", predict_conds = None, predict_batch = None)
-
-print("ground truth:")
-print([x for x in np.unique(meta_gt["batch_cond"].values)])
-
-# normalize the count
-counts_gt = counts_gt/(np.sum(counts_gt, axis = 1, keepdims = True) + 1e-6)
-counts_gt_denoised = counts_gt_denoised/(np.sum(counts_gt_denoised, axis = 1, keepdims = True) + 1e-6)
-counts_predict = counts_predict/(np.sum(counts_predict, axis = 1, keepdims = True) + 1e-6)
-counts_input = counts_input/(np.sum(counts_input, axis = 1, keepdims = True) + 1e-6)
-
-# no 1-1 match, check cell-type level scores
-unique_celltypes = np.unique(meta_gt["annos"].values)
-mean_inputs = []
-mean_predicts = []
-mean_gts = []
-mean_gts_denoised = []
-for celltype in unique_celltypes:
-    mean_input = np.mean(counts_input[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_predict = np.mean(counts_predict[np.where(meta_input["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt = np.mean(counts_gt[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-    mean_gt_denoised = np.mean(counts_gt_denoised[np.where(meta_gt["annos"].values.squeeze() == celltype)[0],:], axis = 0)
-
-    mean_inputs.append(mean_input)
-    mean_predicts.append(mean_predict)
-    mean_gts.append(mean_gt)
-    mean_gts_denoised.append(mean_gt_denoised)
-mean_inputs = np.array(mean_inputs)
-mean_predicts = np.array(mean_predicts)
-mean_gts = np.array(mean_gts)
-mean_gts_denoised = np.array(mean_gts_denoised)
-
-# cell-type-specific normalized MSE
-mses_input = np.sum((mean_inputs - mean_gts_denoised) ** 2, axis = 1)
-mses_scdisinfact = np.sum((mean_predicts - mean_gts_denoised) ** 2, axis = 1)
-# cell-type-specific pearson correlation
-pearsons_input = np.array([stats.pearsonr(mean_inputs[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-pearsons_scdisinfact = np.array([stats.pearsonr(mean_predicts[i,:], mean_gts_denoised[i,:])[0] for i in range(mean_gts_denoised.shape[0])])
-# cell-type-specific R2 score
-r2_input = np.array([r2_score(y_pred = mean_inputs[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-r2_scdisinfact = np.array([r2_score(y_pred = mean_predicts[i,:], y_true = mean_gts_denoised[i,:]) for i in range(mean_gts_denoised.shape[0])])
-
-scores6 = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pearson input", "R2 input", "Method", "Prediction"])
-scores6["MSE"] = mses_scdisinfact
-scores6["MSE input"] = mses_input
-scores6["Pearson"] = pearsons_scdisinfact
-scores6["Pearson input"] = pearsons_input
-scores6["R2"] = r2_scdisinfact
-scores6["R2 input"] = r2_input
-scores6["Method"] = "scDisInFact"
-scores6["Prediction"] = "Condition 1&2\n(w/ batch effect)"
-
-# In[]
-scores = pd.concat([scores1, scores2, scores3, scores4, scores5, scores6], axis = 0)
-scores.to_csv(result_dir + f"scores_oos.csv")
 
 # In[]
 # -------------------------------------------------------------------------------------------------
@@ -1306,8 +519,8 @@ scores_all = pd.DataFrame(columns = ["MSE", "Pearson", "R2", "MSE input", "Pears
 for n_diff_genes in [20, 50, 100]:
     for diff in [2, 4, 8]:
         scdisinfact_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
-        scores_scdisinfact_is = pd.read_csv(scdisinfact_dir + "scores_full.csv", index_col = 0)
-        scores_scdisinfact_oos = pd.read_csv(scdisinfact_dir + "scores_oos.csv", index_col = 0)
+        scores_scdisinfact_is = pd.read_csv(scdisinfact_dir + "scores_cluster_full.csv", index_col = 0)
+        scores_scdisinfact_oos = pd.read_csv(scdisinfact_dir + "scores_cluster_oos.csv", index_col = 0)
         scores_scdisinfact_is["training"] = "is"
         scores_scdisinfact_oos["training"] = "oos"
         
