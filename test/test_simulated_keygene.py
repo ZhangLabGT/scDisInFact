@@ -248,11 +248,14 @@ for dataset_dir in simulated_lists:
 plt.rcParams["font.size"] = 15
 fig = plt.figure(figsize = (7,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='ndiff', y='AUPRC', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
-ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax = sns.barplot(x='ndiff', y='AUPRC', hue='method', data=auprc_dict, ax = ax, capsize = 0.1)
+sns.stripplot(data = auprc_dict, x = "ndiff", y = "AUPRC", hue = "method", ax = ax, color = "black", dodge = True) 
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles[3:], labels[3:], loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
 ax.set_xlabel("Perturbation parameters")
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.2f')    
+    ax.bar_label(i, fmt='%.2f', padding = -100)    
+
 
 fig.savefig("./results_simulated/disentangle/AUPRC (ndiffs).png", bbox_inches = "tight")
 
@@ -260,11 +263,13 @@ fig.savefig("./results_simulated/disentangle/AUPRC (ndiffs).png", bbox_inches = 
 plt.rcParams["font.size"] = 15
 fig = plt.figure(figsize = (7,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='ndiff', y='AUROC', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
-ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax = sns.barplot(x='ndiff', y='AUROC', hue='method', data=auprc_dict, ax = ax, capsize = 0.1)
+sns.stripplot(data = auprc_dict, x = "ndiff", y = "AUROC", hue = "method", ax = ax, color = "black", dodge = True) 
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles[3:], labels[3:], loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
 ax.set_xlabel("Perturbation parameters")
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.2f')    
+    ax.bar_label(i, fmt='%.2f', padding = -100)   
 
 fig.savefig("./results_simulated/disentangle/AUROC (ndiffs).png", bbox_inches = "tight")
 
@@ -272,11 +277,13 @@ fig.savefig("./results_simulated/disentangle/AUROC (ndiffs).png", bbox_inches = 
 plt.rcParams["font.size"] = 15
 fig = plt.figure(figsize = (7,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='ndiff', y='Eprec', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
-ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax = sns.barplot(x='ndiff', y='Eprec', hue='method', data=auprc_dict, ax = ax, capsize = 0.1)
+sns.stripplot(data = auprc_dict, x = "ndiff", y = "Eprec", hue = "method", ax = ax, color = "black", dodge = True) 
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles[3:], labels[3:], loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
 ax.set_xlabel("Perturbation parameters")
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.2f')    
+    ax.bar_label(i, fmt='%.2f', padding = -70)  
 
 fig.savefig("./results_simulated/disentangle/Eprec (ndiffs).png", bbox_inches = "tight")
 
@@ -284,11 +291,13 @@ fig.savefig("./results_simulated/disentangle/Eprec (ndiffs).png", bbox_inches = 
 plt.rcParams["font.size"] = 15
 fig = plt.figure(figsize = (7,5))
 ax = fig.add_subplot()
-ax = sns.barplot(x='ndiff', y='Pearson', hue='method', data=auprc_dict, ax = ax, errwidth=0) # , errwidth=0
-ax.legend(loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
+ax = sns.barplot(x='ndiff', y='Pearson', hue='method', data=auprc_dict, ax = ax, capsize = 0.1)
+sns.stripplot(data = auprc_dict, x = "ndiff", y = "Pearson", hue = "method", ax = ax, color = "black", dodge = True) 
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles[3:], labels[3:], loc='upper left', prop={'size': 15}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1))
 ax.set_xlabel("Perturbation parameters")
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.2f')    
+    ax.bar_label(i, fmt='%.2f', padding = -60)  
 
 fig.savefig("./results_simulated/disentangle/Pearson (ndiffs).png", bbox_inches = "tight")
 

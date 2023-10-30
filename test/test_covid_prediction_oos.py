@@ -144,12 +144,15 @@ lr = 5e-4
 model = scdisinfact.scdisinfact(data_dict = data_dict_train, Ks = Ks, batch_size = batch_size, interval = interval, lr = lr, 
                                 reg_mmd_comm = reg_mmd_comm, reg_mmd_diff = reg_mmd_diff, reg_gl = reg_gl, reg_class = reg_class, 
                                 reg_kl_comm = reg_kl_comm, reg_kl_diff = reg_kl_diff, seed = 0, device = device)
-model.train()
-losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
-_ = model.eval()
-torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
+# model.train()
+# losses = model.train_model(nepochs = nepochs, recon_loss = "NB")
+# _ = model.eval()
+# torch.save(model.state_dict(), result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth")
 model.load_state_dict(torch.load(result_dir + f"scdisinfact_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}.pth", map_location = device))
 
+comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
+if not os.path.exists(result_dir + comment):
+    os.makedirs(result_dir + comment)
 # In[] Plot results
 z_cs = []
 z_ds = []
@@ -174,9 +177,7 @@ z_ds_umap = []
 z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[0] for z_d in z_ds], axis = 0)))
 z_ds_umap.append(pca_op.fit_transform(np.concatenate([z_d[1] for z_d in z_ds], axis = 0)))
 
-comment = f'results_{Ks}_{lambs}_{batch_size}_{nepochs}_{lr}/'
-if not os.path.exists(result_dir + comment):
-    os.makedirs(result_dir + comment)
+
 
 utils.plot_latent(zs = z_cs_umap, annos = np.concatenate([x["predicted.celltype.l1"].values.squeeze() for x in data_dict_train["meta_cells"]]), batches = np.concatenate([x["dataset"].values.squeeze() for x in data_dict_train["meta_cells"]]), \
     mode = "annos", axis_label = "UMAP", figsize = (10,7), save = (result_dir + comment+"common_dims_celltypes_l1.png") if result_dir else None , markerscale = 9, s = 1, alpha = 0.5, label_inplace = False, text_size = "small")
@@ -732,15 +733,19 @@ plt.rcParams["font.size"] = 20
 fig = plt.figure(figsize = (20,5), dpi = 200)
 ax = fig.subplots(nrows = 1, ncols = 3)
 sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores1, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], color = "black", dodge = True) 
 sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores1, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], color = "black", dodge = True) 
 sns.barplot(data = scores1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores1, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], color = "black", dodge = True) 
 fig.tight_layout()
 _ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
 _ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
 _ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
 ax[0].get_legend().remove()
 ax[1].get_legend().remove()
-leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6)
+handles, labels = ax[2].get_legend_handles_labels()
+leg = ax[2].legend(handles[int(len(handles)/2):], labels[int(len(handles)/2):], loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6, edgecolor="black")
 ax[0].set_xlabel(None)
 ax[1].set_xlabel(None)
 ax[2].set_xlabel(None)
@@ -763,15 +768,19 @@ fig.savefig(result_dir + comment + "scores_wo_batcheffect.png", bbox_inches = "t
 fig = plt.figure(figsize = (20,5), dpi = 200)
 ax = fig.subplots(nrows = 1, ncols = 3)
 sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores2, x = "Prediction", hue = "Method", y = "MSE", ax = ax[0], color = "black", dodge = True) 
 sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores2, x = "Prediction", hue = "Method", y = "Pearson", ax = ax[1], color = "black", dodge = True) 
 sns.barplot(data = scores2, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], width = 0.5, capsize = 0.1)
+sns.stripplot(data = scores2, x = "Prediction", hue = "Method", y = "R2", ax = ax[2], color = "black", dodge = True) 
 fig.tight_layout()
 _ = ax[0].set_xticklabels(ax[0].get_xticklabels(), rotation = 45)
 _ = ax[1].set_xticklabels(ax[1].get_xticklabels(), rotation = 45)
 _ = ax[2].set_xticklabels(ax[2].get_xticklabels(), rotation = 45)
 ax[0].get_legend().remove()
 ax[1].get_legend().remove()
-leg = ax[2].legend(loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6, edgecolor="black")
+handles, labels = ax[2].get_legend_handles_labels()
+leg = ax[2].legend(handles[int(len(handles)/2):], labels[int(len(handles)/2):], loc='upper left', prop={'size': 20}, frameon = False, ncol = 1, bbox_to_anchor=(1.04, 1), markerscale = 6, edgecolor="black")
 
 ax[0].set_xlabel(None)
 ax[1].set_xlabel(None)

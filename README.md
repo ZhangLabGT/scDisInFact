@@ -54,7 +54,7 @@ data_dict = create_scdisinfact_dataset(counts, meta_cells, condition_key = ["con
 ```python
 # declare latent dimensions, we have two condition types, so there are three element corresponding to 
 # shared-bio factor, unshared-bio factor for condition 1, unshared-bio factor for condition 2
-Ks = [8, 4, 4]
+Ks = [8, 2, 2]
 # training device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = scdisinfact(data_dict = data_dict, Ks = Ks, device = device)

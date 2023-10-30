@@ -129,7 +129,7 @@ lambs = [reg_mmd_comm, reg_mmd_diff, reg_kl_comm, reg_kl_diff, reg_class, reg_gl
 Ks = [8, 2]
 
 batch_size = 64
-nepochs = 50
+nepochs = 100
 interval = 10
 lr = 5e-4
 

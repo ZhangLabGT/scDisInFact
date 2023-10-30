@@ -625,7 +625,7 @@ for n_diff_genes in [20, 50, 100]:
     for diff in [2, 4, 8]:
         result_dir = f"./results_simulated/prediction/2conds_base_{ncells_total}_{ngenes}_{sigma}_{n_diff_genes}_{diff}/"
 
-        scores_full = pd.read_csv(result_dir + "scores_full.csv", index_col = 0)
+        scores_full = pd.read_csv(result_dir + "scores_cluster_full.csv", index_col = 0)
         scores_missing1 = pd.read_csv(result_dir + "scores_missing1.csv", index_col = 0)
         scores_missing2 = pd.read_csv(result_dir + "scores_missing2.csv", index_col = 0)
         scores_missing3 = pd.read_csv(result_dir + "scores_missing3.csv", index_col = 0)
