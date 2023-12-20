@@ -49,8 +49,7 @@ def show_values(axs, orient="v", space=.01):
 #
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 data_dir = "../data/GBM_treatment/Fig4/processed/"
-# result_dir = "results_GBM_treatment/Fig4_patient/"
-result_dir = "results_GBM_treatment/Fig4_patient_new/"
+result_dir = "results_GBM_treatment/Fig4_patient/"
 if not os.path.exists(result_dir):
     os.makedirs(result_dir)
 
