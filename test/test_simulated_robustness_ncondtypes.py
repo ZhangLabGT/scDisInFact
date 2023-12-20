@@ -362,7 +362,7 @@ pred_scores = pd.read_csv(result_dir + "prediction_scores.csv", index_col = 0)
 pred_scores["MSE (ratio)"] = pred_scores["MSE"].values/pred_scores["MSE input"].values
 
 plt.rcParams["font.size"] = 15
-fig = plt.figure(figsize = (14,5))
+fig = plt.figure(figsize = (20,5))
 # ax = fig.subplots(nrows = 1, ncols = 3)
 ax = fig.subplots(nrows = 1, ncols = 3)
 ax[0] = sns.barplot(x='Prediction', y='MSE', data=pred_scores, ax = ax[0], ci = None)
