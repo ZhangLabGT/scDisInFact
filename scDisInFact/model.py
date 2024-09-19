@@ -804,7 +804,7 @@ class scdisinfact(nn.Module):
                 predict_batch = torch.tensor([[np.where(self.data_dict["matching_dict"]["batch_name"] == predict_batch)[0][0]] for x in range(curr_batch.shape[0])], device = self.device)
                 dict_gen = self.generative(z_c = dic_inf_pred["mu_c"], z_d = z_ds_pred, batch_ids = predict_batch)
 
-        return dict_gen["mu"].detach().cpu().numpy()
+        return dict_gen["mu"].detach().cpu().numpy() * size_factor
  
 
     def extract_gene_scores(self):
